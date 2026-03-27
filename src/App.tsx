@@ -40,6 +40,7 @@ const DriversManagement = lazy(() => import("./pages/admin/DriversManagement"));
 const TripsManagement = lazy(() => import("./pages/admin/TripsManagement"));
 const BookingsManagement = lazy(() => import("./pages/admin/BookingsManagement"));
 const PickupPointsManagement = lazy(() => import("./pages/admin/PickupPointsManagement"));
+const RayonsManagement = lazy(() => import("./pages/admin/RayonsManagement"));
 const ReviewsManagement = lazy(() => import("./pages/admin/ReviewsManagement"));
 const UsersManagement = lazy(() => import("./pages/admin/UsersManagement"));
 
@@ -104,6 +105,7 @@ const App = () => (
                     <Route path="trips" element={<TripsManagement />} />
                     <Route path="bookings" element={<BookingsManagement />} />
                     <Route path="pickup-points" element={<PickupPointsManagement />} />
+                    <Route path="rayons" element={<RayonsManagement />} />
                     <Route path="reviews" element={<ReviewsManagement />} />
                     <Route path="users" element={<UsersManagement />} />
                   </Route>

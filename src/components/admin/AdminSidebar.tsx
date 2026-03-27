@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Bus, ClipboardList, MapPin, Star, LogOut, User as UserIcon } from "lucide-react";
+import { LayoutDashboard, Users, Bus, ClipboardList, MapPin, Star, LogOut, User as UserIcon, Layers } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
@@ -24,6 +24,7 @@ const menuItems = [
   { title: "Users", url: "/admin/users", icon: UserIcon },
   { title: "Trips", url: "/admin/trips", icon: Bus },
   { title: "Bookings", url: "/admin/bookings", icon: ClipboardList },
+  { title: "Rayons", url: "/admin/rayons", icon: Layers },
   { title: "Pickup Points", url: "/admin/pickup-points", icon: MapPin },
   { title: "Reviews", url: "/admin/reviews", icon: Star },
 ];
@@ -33,7 +34,7 @@ export function AdminSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
 
   // Count pending driver approvals
   const { data: pendingCount = 0 } = useQuery({

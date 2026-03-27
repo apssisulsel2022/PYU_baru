@@ -70,6 +70,13 @@ export interface DbReview {
   created_at: string;
 }
 
+export interface DbRayon {
+  id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+}
+
 export interface DbPickupPoint {
   id: string;
   label: string;
@@ -82,6 +89,9 @@ export interface DbPickupPoint {
   minutes_from_start: number;
   lat: number;
   lng: number;
+  rayon_id: string | null;
+  capacity?: number;
+  deleted_at?: string | null;
 }
 
 // Helper to convert DbPickupPoint to the legacy PickupPoint shape used in components
@@ -97,6 +107,9 @@ export function toPickupPoint(p: DbPickupPoint) {
     order: p.order_index,
     minutesFromStart: p.minutes_from_start,
     coords: [p.lat, p.lng] as [number, number],
+    rayonId: p.rayon_id,
+    capacity: p.capacity || 0,
+    deletedAt: p.deleted_at
   };
 }
 
@@ -140,18 +153,113 @@ export function toBooking(b: DbBooking, pickupPoints: any[]) {
 
 // ─── Hooks ───────────────────────────────────────────────────────────
 
+export function useRayons() {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: ["rayons"],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from("rayons").select("*").order("name");
+        if (error) {
+          // If table doesn't exist (404), return empty array instead of crashing
+          if (error.code === 'PGRST116' || error.message.includes('not found') || error.code === '404') return [];
+          throw error;
+        }
+        return (data || []) as DbRayon[];
+      } catch (e) {
+        console.error("Rayons table might not be created yet:", e);
+        return [];
+      }
+    },
+    retry: false,
+  });
+
+  const upsert = useMutation({
+    mutationFn: async (rayon: Partial<DbRayon> & { id?: string }) => {
+      const { error } = await supabase.from("rayons").upsert(rayon as any);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rayons"] }),
+  });
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("rayons").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rayons"] }),
+  });
+
+  return { ...query, upsert, remove };
+}
+
 export function usePickupPoints() {
-  return useQuery({
+  const qc = useQueryClient();
+  const query = useQuery({
     queryKey: ["pickup_points"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("pickup_points")
-        .select("*")
-        .order("order_index");
-      if (error) throw error;
-      return (data as DbPickupPoint[]).map(toPickupPoint);
+      try {
+        const { data, error } = await supabase
+          .from("pickup_points")
+          .select("*")
+          .is("deleted_at", null) // Exclude soft-deleted items
+          .order("order_index");
+        
+        if (error) {
+          // If deleted_at column doesn't exist (400), try without the filter
+          if (error.code === 'PGRST204' || error.message.includes('deleted_at')) {
+            const { data: fallbackData, error: fallbackError } = await supabase
+              .from("pickup_points")
+              .select("*")
+              .order("order_index");
+            if (fallbackError) throw fallbackError;
+            return (fallbackData as DbPickupPoint[]).map(toPickupPoint);
+          }
+          throw error;
+        }
+        return (data as DbPickupPoint[]).map(toPickupPoint);
+      } catch (e) {
+        console.error("Error fetching pickup points:", e);
+        return [];
+      }
     },
   });
+
+  const upsert = useMutation({
+    mutationFn: async (point: Partial<DbPickupPoint> & { id?: string }) => {
+      // Validate duplicate name within same Rayon
+      if (point.name && point.rayon_id) {
+        const { data: existing } = await supabase
+          .from("pickup_points")
+          .select("id")
+          .eq("name", point.name)
+          .eq("rayon_id", point.rayon_id)
+          .is("deleted_at", null)
+          .maybeSingle();
+
+        if (existing && existing.id !== point.id) {
+          throw new Error(`Nama pick-point "${point.name}" sudah digunakan di rayon ini.`);
+        }
+      }
+
+      const { error } = await supabase.from("pickup_points").upsert(point as any);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pickup_points"] }),
+  });
+
+  const softDelete = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("pickup_points")
+        .update({ deleted_at: new Date().toISOString() } as any)
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pickup_points"] }),
+  });
+
+  return { ...query, upsert, softDelete };
 }
 
 export function useDrivers() {
@@ -260,16 +368,36 @@ export function useReviews() {
   const query = useQuery({
     queryKey: ["reviews"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: reviewsData, error: reviewsError } = await supabase
         .from("reviews")
-        .select("*, trip:trips(*), driver:drivers(*)")
+        .select("*")
         .order("created_at", { ascending: false })
         .limit(100);
-      if (error) throw error;
-      return (data as any[]).map((r) => ({
+      
+      if (reviewsError) throw reviewsError;
+      if (!reviewsData || reviewsData.length === 0) return [];
+
+      // Collect unique trip_ids and driver_ids
+      const tripIds = Array.from(new Set(reviewsData.map(r => r.trip_id).filter(Boolean)));
+      const driverIds = Array.from(new Set(reviewsData.map(r => r.driver_id).filter(Boolean)));
+
+      // Fetch related trips and drivers separately since relationships might be missing in DB
+      const [tripsRes, driversRes] = await Promise.all([
+        tripIds.length > 0 
+          ? supabase.from("trips").select("*").in("id", tripIds) 
+          : Promise.resolve({ data: [], error: null }),
+        driverIds.length > 0 
+          ? supabase.from("drivers").select("*").in("id", driverIds) 
+          : Promise.resolve({ data: [], error: null })
+      ]);
+
+      const tripsMap = Object.fromEntries((tripsRes.data || []).map(t => [t.id, t]));
+      const driversMap = Object.fromEntries((driversRes.data || []).map(d => [d.id, d]));
+
+      return reviewsData.map((r) => ({
         ...r,
-        trip: r.trip || null,
-        driver: r.driver || null,
+        trip: tripsMap[r.trip_id] || null,
+        driver: driversMap[r.driver_id] || null,
       })) as (DbReview & { trip: DbTrip; driver: DbDriver })[];
     },
   });

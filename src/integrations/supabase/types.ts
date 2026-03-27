@@ -175,6 +175,8 @@ export type Database = {
       pickup_points: {
         Row: {
           address: string | null
+          capacity: number | null
+          deleted_at: string | null
           id: string
           is_active: boolean | null
           label: string
@@ -185,9 +187,12 @@ export type Database = {
           operating_hours: string | null
           order_index: number
           phone: string | null
+          rayon_id: string | null
         }
         Insert: {
           address?: string | null
+          capacity?: number | null
+          deleted_at?: string | null
           id: string
           is_active?: boolean | null
           label: string
@@ -198,9 +203,12 @@ export type Database = {
           operating_hours?: string | null
           order_index: number
           phone?: string | null
+          rayon_id?: string | null
         }
         Update: {
           address?: string | null
+          capacity?: number | null
+          deleted_at?: string | null
           id?: string
           is_active?: boolean | null
           label?: string
@@ -211,6 +219,36 @@ export type Database = {
           operating_hours?: string | null
           order_index?: number
           phone?: string | null
+          rayon_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pickup_points_rayon_id_fkey"
+            columns: ["rayon_id"]
+            isOneToOne: false
+            referencedRelation: "rayons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rayons: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
         }
         Relationships: []
       }
