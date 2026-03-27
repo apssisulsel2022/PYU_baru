@@ -227,22 +227,28 @@ export function usePickupPoints() {
 
   const upsert = useMutation({
     mutationFn: async (point: Partial<DbPickupPoint> & { id?: string }) => {
+      // Ensure we don't send an empty string as ID for new items
+      const dataToSave = { ...point };
+      if (!dataToSave.id) {
+        delete dataToSave.id;
+      }
+
       // Validate duplicate name within same Rayon
-      if (point.name && point.rayon_id) {
+      if (dataToSave.name && dataToSave.rayon_id) {
         const { data: existing } = await supabase
           .from("pickup_points")
           .select("id")
-          .eq("name", point.name)
-          .eq("rayon_id", point.rayon_id)
+          .eq("name", dataToSave.name)
+          .eq("rayon_id", dataToSave.rayon_id)
           .is("deleted_at", null)
           .maybeSingle();
 
-        if (existing && existing.id !== point.id) {
-          throw new Error(`Nama pick-point "${point.name}" sudah digunakan di rayon ini.`);
+        if (existing && existing.id !== dataToSave.id) {
+          throw new Error(`Nama pick-point "${dataToSave.name}" sudah digunakan di rayon ini.`);
         }
       }
 
-      const { error } = await supabase.from("pickup_points").upsert(point as any);
+      const { error } = await supabase.from("pickup_points").upsert(dataToSave as any);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pickup_points"] }),
@@ -261,10 +267,12 @@ export function usePickupPoints() {
 
   const batchUpsert = useMutation({
     mutationFn: async (points: (Partial<DbPickupPoint> & { id?: string })[]) => {
-      // For simplicity, we'll do them one by one to respect the duplicate name validation 
-      // OR we can do a single upsert if we don't care about the custom error message for each one.
-      // Let's do a single upsert for performance, and the DB will handle constraints if any.
-      const { error } = await supabase.from("pickup_points").upsert(points as any);
+      const dataToSave = points.map(p => {
+        const item = { ...p };
+        if (!item.id) delete item.id;
+        return item;
+      });
+      const { error } = await supabase.from("pickup_points").upsert(dataToSave as any);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pickup_points"] }),
