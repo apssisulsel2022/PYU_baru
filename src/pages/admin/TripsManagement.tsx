@@ -5,7 +5,7 @@ import {
   FileText, List, LayoutGrid, Bus, User, 
   AlertCircle, CheckCircle2, Flag, ChevronRight,
   MoreVertical, ArrowUpRight, Activity, X, CalendarDays,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon, Trash2, DollarSign, AlignLeft
 } from "lucide-react";
 import { formatPrice, VEHICLE_LAYOUTS } from "@/data/shuttle-data";
 import { useTrips, useDrivers, usePickupPoints, useRayons, toTrip, DbTrip } from "@/hooks/use-supabase-data";
@@ -27,6 +27,18 @@ import { format, isBefore, startOfDay, parseISO, isWithinInterval, endOfDay } fr
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
 import { DateRange } from "react-day-picker";
+
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // --- Leaflet Icon Fix ---
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -63,7 +75,7 @@ const createStopIcon = (label: string, isPassed: boolean) => L.divIcon({
 });
 
 export default function TripsManagement() {
-  const { data: dbTrips = [], isLoading, upsert } = useTrips();
+  const { data: dbTrips = [], isLoading, upsert, remove } = useTrips();
   const { data: drivers = [] } = useDrivers();
   const { data: pickupPoints = [] } = usePickupPoints();
   const { data: rayons = [] } = useRayons();
@@ -75,6 +87,9 @@ export default function TripsManagement() {
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [tripToDelete, setTripToDelete] = useState<string | null>(null);
+  
   const [editing, setEditing] = useState<DbTrip | null>(null);
   const [form, setForm] = useState({ 
     route_name: "", 
@@ -86,7 +101,9 @@ export default function TripsManagement() {
     departure_date: format(new Date(), "yyyy-MM-dd"),
     estimated_completion: format(new Date(), "yyyy-MM-dd"),
     rayon_id: "",
-    start_pickup_point_id: ""
+    start_pickup_point_id: "",
+    budget: "",
+    description: ""
   });
 
   // Filtered Pickup Points based on selected Rayon in form
@@ -142,7 +159,9 @@ export default function TripsManagement() {
       departure_date: format(new Date(), "yyyy-MM-dd"),
       estimated_completion: format(new Date(), "yyyy-MM-dd"),
       rayon_id: "",
-      start_pickup_point_id: ""
+      start_pickup_point_id: "",
+      budget: "",
+      description: ""
     });
     setDialogOpen(true);
   };
@@ -159,9 +178,30 @@ export default function TripsManagement() {
       departure_date: t.departure_date ? format(parseISO(t.departure_date), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       estimated_completion: t.estimated_completion ? format(parseISO(t.estimated_completion), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       rayon_id: t.rayon_id || "",
-      start_pickup_point_id: t.start_pickup_point_id || ""
+      start_pickup_point_id: t.start_pickup_point_id || "",
+      budget: String(t.budget || ""),
+      description: t.description || ""
     });
     setDialogOpen(true);
+  };
+
+  const handleDelete = (id: string) => {
+    setTripToDelete(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!tripToDelete) return;
+    try {
+      await remove.mutateAsync(tripToDelete);
+      toast.success("Trip deleted successfully");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete trip");
+    } finally {
+      setTripToDelete(null);
+      setDeleteDialogOpen(false);
+    }
   };
 
   const handleSave = async () => {
@@ -203,7 +243,9 @@ export default function TripsManagement() {
         departure_date: new Date(form.departure_date).toISOString(),
         estimated_completion: new Date(form.estimated_completion).toISOString(),
         rayon_id: form.rayon_id,
-        start_pickup_point_id: form.start_pickup_point_id
+        start_pickup_point_id: form.start_pickup_point_id,
+        budget: Number(form.budget) || 0,
+        description: form.description
       };
       if (editing) payload.id = editing.id;
       await upsert.mutateAsync(payload);
@@ -433,6 +475,9 @@ export default function TripsManagement() {
                           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl" onClick={() => openEdit(t)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
+                          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-destructive hover:bg-red-50" onClick={() => handleDelete(t.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -640,102 +685,236 @@ export default function TripsManagement() {
 
       {/* CRUD Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md rounded-[2rem]">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black uppercase tracking-tighter italic">{editing ? "Modify Mission" : "New Mission"}</DialogTitle>
-            <DialogDescription className="font-bold uppercase text-[10px] tracking-widest">Configure route and assign driver</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest">Rayon</Label>
-                <Select value={form.rayon_id} onValueChange={(v) => setForm(f => ({ ...f, rayon_id: v, start_pickup_point_id: "" }))}>
-                  <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl">
-                    <SelectValue placeholder="Select Rayon" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {rayons.map(r => (
-                      <SelectItem key={r.id} value={r.id} className="font-bold uppercase text-[10px]">{r.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+        <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+          <div className="bg-primary/5 px-8 py-6 border-b border-primary/10">
+            <DialogHeader>
+              <DialogTitle className="text-4xl font-black uppercase tracking-tighter italic text-primary">
+                {editing ? "Modify Mission" : "New Mission"}
+              </DialogTitle>
+              <DialogDescription className="font-bold uppercase text-[11px] tracking-[0.2em] opacity-60">
+                Configure route and assign driver for PYU-GO fleet
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="p-8 space-y-8 max-h-[80vh] overflow-y-auto custom-scrollbar">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Left Column: Route & Time */}
+              <div className="space-y-6">
+                <div className="bg-muted/30 p-5 rounded-2xl border border-border/50 space-y-4">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <Navigation className="h-3 w-3" /> Route Configuration
+                  </h3>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Rayon</Label>
+                      <Select value={form.rayon_id} onValueChange={(v) => setForm(f => ({ ...f, rayon_id: v, start_pickup_point_id: "" }))}>
+                        <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl border-2 focus:ring-primary/20">
+                          <SelectValue placeholder="Select Rayon" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {rayons.map(r => (
+                            <SelectItem key={r.id} value={r.id} className="font-bold uppercase text-[10px]">{r.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Start Point</Label>
+                      <Select value={form.start_pickup_point_id} onValueChange={(v) => setForm(f => ({ ...f, start_pickup_point_id: v }))} disabled={!form.rayon_id}>
+                        <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl border-2 focus:ring-primary/20">
+                          <SelectValue placeholder={form.rayon_id ? "Select Point" : "Select Rayon first"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availablePickupPoints.map(p => (
+                            <SelectItem key={p.id} value={p.id} className="font-bold uppercase text-[10px]">{p.label} - {p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Route Name</Label>
+                    <Input 
+                      className="font-bold h-12 rounded-xl border-2 focus:ring-primary/20" 
+                      value={form.route_name} 
+                      onChange={e => setForm(f => ({ ...f, route_name: e.target.value }))} 
+                      placeholder="e.g. Rayon A - Express" 
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-muted/30 p-5 rounded-2xl border border-border/50 space-y-4">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <Clock className="h-3 w-3" /> Schedule & Pricing
+                  </h3>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Departure Time</Label>
+                      <Input 
+                        type="time" 
+                        className="font-black h-12 rounded-xl border-2 focus:ring-primary/20" 
+                        value={form.departure_time} 
+                        onChange={e => setForm(f => ({ ...f, departure_time: e.target.value }))} 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Base Price (IDR)</Label>
+                      <Input 
+                        type="number" 
+                        className="font-black h-12 rounded-xl border-2 focus:ring-primary/20" 
+                        value={form.base_price} 
+                        onChange={e => setForm(f => ({ ...f, base_price: e.target.value }))} 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Departure Date</Label>
+                      <Input 
+                        type="date" 
+                        className="font-black h-12 rounded-xl border-2 focus:ring-primary/20" 
+                        value={form.departure_date} 
+                        onChange={e => setForm(f => ({ ...f, departure_date: e.target.value }))} 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Est. Finish Date</Label>
+                      <Input 
+                        type="date" 
+                        className="font-black h-12 rounded-xl border-2 focus:ring-primary/20" 
+                        value={form.estimated_completion} 
+                        onChange={e => setForm(f => ({ ...f, estimated_completion: e.target.value }))} 
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest">Start Pickup Point</Label>
-                <Select value={form.start_pickup_point_id} onValueChange={(v) => setForm(f => ({ ...f, start_pickup_point_id: v }))} disabled={!form.rayon_id}>
-                  <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl">
-                    <SelectValue placeholder={form.rayon_id ? "Select Point" : "Select Rayon first"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availablePickupPoints.map(p => (
-                      <SelectItem key={p.id} value={p.id} className="font-bold uppercase text-[10px]">{p.label} - {p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+              {/* Right Column: Fleet & Budget */}
+              <div className="space-y-6">
+                <div className="bg-muted/30 p-5 rounded-2xl border border-border/50 space-y-4">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <Bus className="h-3 w-3" /> Fleet & Driver
+                  </h3>
+
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Vehicle Type</Label>
+                    <Select value={form.vehicle_type} onValueChange={(v) => {
+                      const layout = VEHICLE_LAYOUTS[v];
+                      setForm(f => ({ ...f, vehicle_type: v, total_seats: String(layout?.totalSeats || 10) }));
+                    }}>
+                      <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl border-2 focus:ring-primary/20">
+                        <SelectValue placeholder="Select vehicle" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(VEHICLE_LAYOUTS).map(([key, layout]) => (
+                          <SelectItem key={key} value={key} className="font-bold uppercase text-[10px]">{layout.label} ({layout.totalSeats} seats)</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Assign Driver</Label>
+                    <Select value={form.driver_id} onValueChange={(v) => setForm(f => ({ ...f, driver_id: v }))}>
+                      <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl border-2 focus:ring-primary/20">
+                        <SelectValue placeholder="Select driver" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {drivers.filter(d => d.status !== "inactive").map(d => (
+                          <SelectItem key={d.id} value={d.id} className="font-bold uppercase text-[10px]">{d.name} — {d.plate}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="bg-muted/30 p-5 rounded-2xl border border-border/50 space-y-4">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <DollarSign className="h-3 w-3" /> Financials & Notes
+                  </h3>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Trip Budget (IDR)</Label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 opacity-30" />
+                        <Input 
+                          type="number" 
+                          className="font-black pl-9 h-12 rounded-xl border-2 focus:ring-primary/20" 
+                          value={form.budget} 
+                          onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} 
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest italic opacity-40">Verification</Label>
+                      <div className="h-12 flex items-center px-4 rounded-xl bg-primary/5 border-2 border-dashed border-primary/20">
+                        <span className="text-[10px] font-black uppercase text-primary tracking-widest">Auto-Verified</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Description & Notes</Label>
+                    <div className="relative">
+                      <AlignLeft className="absolute left-3 top-3 h-3.5 w-3.5 opacity-30" />
+                      <Textarea 
+                        className="font-bold pl-9 min-h-[100px] rounded-xl border-2 focus:ring-primary/20" 
+                        value={form.description} 
+                        onChange={e => setForm(f => ({ ...f, description: e.target.value }))} 
+                        placeholder="Additional instructions or notes..."
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest">Route Name</Label>
-              <Input className="font-bold" value={form.route_name} onChange={e => setForm(f => ({ ...f, route_name: e.target.value }))} placeholder="Rayon A - Express" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest">Departure Time</Label>
-                <Input type="time" className="font-black" value={form.departure_time} onChange={e => setForm(f => ({ ...f, departure_time: e.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest">Base Price (IDR)</Label>
-                <Input type="number" className="font-black" value={form.base_price} onChange={e => setForm(f => ({ ...f, base_price: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest">Departure Date</Label>
-                <Input type="date" className="font-black" value={form.departure_date} onChange={e => setForm(f => ({ ...f, departure_date: e.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest">Est. Finish Date</Label>
-                <Input type="date" className="font-black" value={form.estimated_completion} onChange={e => setForm(f => ({ ...f, estimated_completion: e.target.value }))} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest">Vehicle Type</Label>
-              <Select value={form.vehicle_type} onValueChange={(v) => {
-                const layout = VEHICLE_LAYOUTS[v];
-                setForm(f => ({ ...f, vehicle_type: v, total_seats: String(layout?.totalSeats || 10) }));
-              }}>
-                <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl">
-                  <SelectValue placeholder="Select vehicle" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(VEHICLE_LAYOUTS).map(([key, layout]) => (
-                    <SelectItem key={key} value={key} className="font-bold uppercase text-[10px]">{layout.label} ({layout.totalSeats} seats)</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest">Assign Driver</Label>
-              <Select value={form.driver_id} onValueChange={(v) => setForm(f => ({ ...f, driver_id: v }))}>
-                <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl">
-                  <SelectValue placeholder="Select driver" />
-                </SelectTrigger>
-                <SelectContent>
-                  {drivers.filter(d => d.status !== "inactive").map(d => (
-                    <SelectItem key={d.id} value={d.id} className="font-bold uppercase text-[10px]">{d.name} — {d.plate}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl font-bold uppercase text-xs h-12 px-8">Cancel</Button>
-            <Button onClick={handleSave} disabled={upsert.isPending} className="shuttle-gradient rounded-xl font-black uppercase text-xs h-12 px-8 flex-1">
-              {editing ? "Save Mission" : "Add Mission"}
-            </Button>
-          </DialogFooter>
+
+          <div className="p-8 bg-muted/20 border-t border-border flex justify-end gap-4">
+            <DialogFooter className="w-full flex sm:justify-end gap-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setDialogOpen(false)} 
+                className="rounded-2xl font-black uppercase text-xs h-14 px-10 border-2 hover:bg-muted"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSave} 
+                disabled={upsert.isPending} 
+                className="shuttle-gradient rounded-2xl font-black uppercase text-xs h-14 px-12 shadow-xl hover:scale-[1.02] transition-transform active:scale-95"
+              >
+                {editing ? "Update Mission Data" : "Initialize New Mission"}
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="rounded-[2rem]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-2xl font-black uppercase tracking-tighter">Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription className="font-bold uppercase text-[10px] tracking-widest text-destructive">
+              This action cannot be undone. This will permanently delete the mission and all associated tracking data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="rounded-xl font-bold uppercase text-xs h-12 px-8">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90 rounded-xl font-black uppercase text-xs h-12 px-8">
+              Confirm Deletion
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <style>{`
         .custom-bus-icon { background: none; border: none; }

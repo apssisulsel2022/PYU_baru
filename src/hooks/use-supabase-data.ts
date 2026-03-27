@@ -42,6 +42,8 @@ export interface DbTrip {
   actual_completion: string | null;
   rayon_id: string | null;
   start_pickup_point_id: string | null;
+  budget: number;
+  description?: string;
   created_at: string;
   // joined
   driver?: DbDriver | null;
@@ -135,6 +137,8 @@ export function toTrip(t: DbTrip) {
     actualCompletion: t.actual_completion,
     rayonId: t.rayon_id,
     startPickupPointId: t.start_pickup_point_id,
+    budget: Number(t.budget) || 0,
+    description: t.description || "",
     createdAt: t.created_at,
   };
 }
@@ -328,6 +332,12 @@ export function useTrips() {
   const upsert = useMutation({
     mutationFn: async (trip: Partial<DbTrip> & { id?: string }) => {
       const { driver, ...rest } = trip as any;
+      
+      // Validation: Budget must be positive
+      if (rest.budget !== undefined && rest.budget < 0) {
+        throw new Error("Budget cannot be negative");
+      }
+
       const { error } = await supabase.from("trips").upsert(rest);
       if (error) throw error;
     },
@@ -353,7 +363,15 @@ export function useTrips() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trips"] }),
   });
 
-  return { ...query, upsert, updateSeats, completeTrip };
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("trips").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["trips"] }),
+  });
+
+  return { ...query, upsert, updateSeats, completeTrip, remove };
 }
 
 export function useBookings() {

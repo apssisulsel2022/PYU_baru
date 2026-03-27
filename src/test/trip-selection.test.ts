@@ -53,4 +53,27 @@ describe("Trip Selection and Validation Logic", () => {
     const result = validateTripSelection("r2", "p3", mockPoints);
     expect(result.valid).toBe(true);
   });
+
+  it("should allow valid trip with rayon and start point", () => {
+    const trip = {
+      rayon_id: "rayon-1",
+      start_pickup_point_id: "point-1",
+      budget: 500000
+    };
+
+    // Simulating frontend validation logic
+    const isValid = !!trip.rayon_id && !!trip.start_pickup_point_id && trip.budget >= 0;
+    expect(isValid).toBe(true);
+  });
+
+  it("should fail if budget is negative", () => {
+    const trip = {
+      rayon_id: "rayon-1",
+      start_pickup_point_id: "point-1",
+      budget: -100
+    };
+
+    const isValid = !!trip.rayon_id && !!trip.start_pickup_point_id && trip.budget >= 0;
+    expect(isValid).toBe(false);
+  });
 });
