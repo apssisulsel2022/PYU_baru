@@ -21,10 +21,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Polyline, useMap } from "react-leaflet";
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { cn } from "@/lib/utils";
+import { cn, getRayonColor } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,12 +51,15 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 
 // Custom Marker Icon for Pickup Points
-const createCustomIcon = (label: string, active: boolean) => L.divIcon({
-  className: 'custom-div-icon',
-  html: `<div class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-white shadow-lg font-bold text-xs ${active ? 'bg-primary text-white' : 'bg-zinc-400 text-white'}">${label}</div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16]
-});
+const createCustomIcon = (label: string, active: boolean, rayonId?: string | null) => {
+  const color = getRayonColor(rayonId);
+  return L.divIcon({
+    className: 'custom-div-icon',
+    html: `<div class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-white shadow-lg font-bold text-xs ${active ? color.bg : 'bg-zinc-400'} text-white transition-all duration-300 hover:scale-110">${label}</div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+  });
+};
 
 interface PointForm {
   id?: string;
@@ -492,35 +496,38 @@ export default function PickupPointsManagement() {
             className="h-full w-full z-0"
           >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {filteredPoints.map(p => (
-              <Marker 
-                key={p.id} 
-                position={p.coords} 
-                icon={createCustomIcon(p.label, p.isActive)}
-                eventHandlers={{
-                  click: () => {
-                    const found = points.find(pt => pt.id === p.id);
-                    if (found) openEdit(found);
-                  }
-                }}
-              >
-                <Popup className="custom-popup">
-                  <div className="p-3 min-w-[150px]">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center font-black text-[10px]">{p.label}</div>
-                      <p className="font-black uppercase text-[11px] text-primary leading-tight">{p.name}</p>
+            {filteredPoints.map(p => {
+              const rayonColor = getRayonColor(p.rayonId);
+              return (
+                <Marker 
+                  key={p.id} 
+                  position={p.coords} 
+                  icon={createCustomIcon(p.label, p.isActive, p.rayonId)}
+                  eventHandlers={{
+                    click: () => {
+                      const found = points.find(pt => pt.id === p.id);
+                      if (found) openEdit(found);
+                    }
+                  }}
+                >
+                  <Popup className="custom-popup">
+                    <div className="p-3 min-w-[150px]">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={cn("w-6 h-6 rounded-full text-white flex items-center justify-center font-black text-[10px]", p.isActive ? rayonColor.bg : "bg-zinc-400")}>{p.label}</div>
+                        <p className={cn("font-black uppercase text-[11px] leading-tight", p.isActive ? rayonColor.text : "text-zinc-500")}>{p.name}</p>
+                      </div>
+                      <p className="text-[9px] font-bold opacity-70 uppercase mb-2">{p.address}</p>
+                      <div className="flex items-center justify-between pt-2 border-t border-dashed">
+                        <Badge variant="secondary" className={cn("text-[8px] font-black uppercase tracking-tighter", p.isActive ? rayonColor.light + " " + rayonColor.text : "")}>
+                          {rayons.find(r => r.id === p.rayonId)?.name || "N/A"}
+                        </Badge>
+                        <span className="text-[9px] font-black opacity-40 uppercase">Cap: {p.capacity}</span>
+                      </div>
                     </div>
-                    <p className="text-[9px] font-bold opacity-70 uppercase mb-2">{p.address}</p>
-                    <div className="flex items-center justify-between pt-2 border-t border-dashed">
-                      <Badge variant="secondary" className="text-[8px] font-black uppercase tracking-tighter">
-                        {rayons.find(r => r.id === p.rayonId)?.name || "N/A"}
-                      </Badge>
-                      <span className="text-[9px] font-black opacity-40 uppercase">Cap: {p.capacity}</span>
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+                  </Popup>
+                </Marker>
+              );
+            })}
           </MapContainer>
           <div className="absolute top-6 right-6 z-10 bg-background/90 backdrop-blur-md p-3 rounded-2xl border-2 shadow-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -543,20 +550,22 @@ export default function PickupPointsManagement() {
             <div className="divide-y divide-border/50">
               {filteredPoints.map(p => {
                 const rayon = rayons.find(r => r.id === p.rayonId);
+                const rayonColor = getRayonColor(p.rayonId);
                 return (
                   <div key={p.id} className="p-6 hover:bg-muted/50 transition-all group relative overflow-hidden">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-4">
                         <div className={cn(
                           "w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm transition-transform group-hover:scale-110",
-                          p.isActive ? "bg-primary text-white" : "bg-zinc-200 text-zinc-500"
+                          p.isActive ? rayonColor.bg : "bg-zinc-200 text-zinc-500",
+                          "text-white"
                         )}>
                           {p.label}
                         </div>
                         <div>
-                          <p className="font-black uppercase tracking-tight text-sm leading-none mb-1.5">{p.name}</p>
+                          <p className={cn("font-black uppercase tracking-tight text-sm leading-none mb-1.5", p.isActive ? rayonColor.text : "")}>{p.name}</p>
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-[8px] font-black uppercase tracking-tighter h-5 bg-background">
+                            <Badge variant="outline" className={cn("text-[8px] font-black uppercase tracking-tighter h-5 bg-background", p.isActive ? rayonColor.border + " " + rayonColor.text : "")}>
                               {rayon?.name || "No Rayon"}
                             </Badge>
                             <span className="text-[10px] font-bold opacity-30 uppercase tracking-widest italic">Idx: {p.order}</span>
@@ -574,10 +583,10 @@ export default function PickupPointsManagement() {
                     </div>
                     <div className="grid grid-cols-2 gap-4 mt-4">
                       <div className="flex items-center gap-2 text-[10px] font-bold uppercase opacity-50 bg-background/50 p-2 rounded-lg border border-border/30">
-                        <Clock className="h-3.5 w-3.5 text-primary" /> {p.operatingHours || "24/7"}
+                        <Clock className={cn("h-3.5 w-3.5", p.isActive ? rayonColor.text : "text-primary")} /> {p.operatingHours || "24/7"}
                       </div>
                       <div className="flex items-center gap-2 text-[10px] font-bold uppercase opacity-50 bg-background/50 p-2 rounded-lg border border-border/30">
-                        <Users className="h-3.5 w-3.5 text-primary" /> Cap: {p.capacity}
+                        <Users className={cn("h-3.5 w-3.5", p.isActive ? rayonColor.text : "text-primary")} /> Cap: {p.capacity}
                       </div>
                     </div>
                   </div>
@@ -637,35 +646,38 @@ export default function PickupPointsManagement() {
               <TableBody>
                 {paginatedPoints.map((p) => {
                   const rayon = rayons.find(r => r.id === p.rayonId);
-                  return (                    <TableRow key={p.id} className="hover:bg-muted/50 transition-colors group">
+                  const rayonColor = getRayonColor(p.rayonId);
+                  return (
+                    <TableRow key={p.id} className="hover:bg-muted/50 transition-colors group">
                       <TableCell className="text-center">
                         <div className={cn(
                           "w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs mx-auto shadow-sm",
-                          p.isActive ? "bg-primary text-white" : "bg-zinc-200 text-zinc-500"
+                          p.isActive ? rayonColor.bg : "bg-zinc-200 text-zinc-500",
+                          "text-white"
                         )}>
                           {p.label}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <p className="font-black uppercase tracking-tight text-sm leading-none mb-1.5">{p.name}</p>
-                        <Badge variant="outline" className="text-[8px] font-black uppercase tracking-tighter h-5 bg-background">
+                        <p className={cn("font-black uppercase tracking-tight text-sm leading-none mb-1.5", p.isActive ? rayonColor.text : "")}>{p.name}</p>
+                        <Badge variant="outline" className={cn("text-[8px] font-black uppercase tracking-tighter h-5 bg-background", p.isActive ? rayonColor.border + " " + rayonColor.text : "")}>
                           {rayon?.name || "No Rayon"}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         <p className="text-[10px] font-bold uppercase opacity-60 line-clamp-1 max-w-[200px]">{p.address || "-"}</p>
                         <div className="flex items-center gap-1 mt-1">
-                          <MapPin className="h-3 w-3 text-primary opacity-50" />
+                          <MapPin className={cn("h-3 w-3 opacity-50", p.isActive ? rayonColor.text : "text-primary")} />
                           <span className="text-[9px] font-mono opacity-40">{p.coords[0].toFixed(4)}, {p.coords[1].toFixed(4)}</span>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2 text-[10px] font-bold uppercase opacity-60">
-                            <Phone className="h-3 w-3 text-primary" /> {p.phone || "-"}
+                            <Phone className={cn("h-3 w-3", p.isActive ? rayonColor.text : "text-primary")} /> {p.phone || "-"}
                           </div>
                           <div className="flex items-center gap-2 text-[10px] font-bold uppercase opacity-60">
-                            <Clock className="h-3 w-3 text-primary" /> {p.operatingHours || "24/7"}
+                            <Clock className={cn("h-3 w-3", p.isActive ? rayonColor.text : "text-primary")} /> {p.operatingHours || "24/7"}
                           </div>
                         </div>
                       </TableCell>

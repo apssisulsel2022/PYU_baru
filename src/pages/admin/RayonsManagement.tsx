@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, getRayonColor } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
 export default function RayonsManagement() {
@@ -134,14 +134,15 @@ export default function RayonsManagement() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredRayons.map(r => {
           const rayonPoints = points.filter(p => p.rayonId === r.id);
+          const rayonColor = getRayonColor(r.id);
           return (
-            <Card key={r.id} className="rounded-[2rem] border-2 shadow-md hover:shadow-xl transition-all group overflow-hidden border-border/50">
-              <CardHeader className="p-6 bg-muted/20 border-b relative overflow-hidden">
-                <div className="absolute -right-4 -top-4 opacity-5 group-hover:scale-110 transition-transform">
+            <Card key={r.id} className={cn("rounded-[2rem] border-2 shadow-md hover:shadow-xl transition-all group overflow-hidden", rayonColor.border, "bg-background")}>
+              <CardHeader className={cn("p-6 border-b relative overflow-hidden", rayonColor.light)}>
+                <div className={cn("absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform", rayonColor.text)}>
                   <Layers size={100} />
                 </div>
                 <div className="flex justify-between items-start relative z-10">
-                  <Badge variant="outline" className="bg-background font-black uppercase tracking-widest text-[9px] px-2">
+                  <Badge variant="outline" className={cn("bg-background font-black uppercase tracking-widest text-[9px] px-2", rayonColor.border, rayonColor.text)}>
                     Region ID: {r.id.slice(0, 8)}
                   </Badge>
                   <div className="flex gap-1">
@@ -153,7 +154,7 @@ export default function RayonsManagement() {
                     </Button>
                   </div>
                 </div>
-                <CardTitle className="text-xl font-black uppercase tracking-tight mt-4 group-hover:text-primary transition-colors">{r.name}</CardTitle>
+                <CardTitle className={cn("text-xl font-black uppercase tracking-tight mt-4 transition-colors", rayonColor.text)}>{r.name}</CardTitle>
                 <CardDescription className="line-clamp-2 text-[10px] font-bold uppercase tracking-wider min-h-[30px] opacity-60">
                   {r.description || "Tidak ada deskripsi"}
                 </CardDescription>
@@ -161,19 +162,19 @@ export default function RayonsManagement() {
               <CardContent className="p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-[10px] font-black uppercase opacity-40">
-                    <MapPin className="h-3.5 w-3.5" />
+                    <MapPin className={cn("h-3.5 w-3.5", rayonColor.text)} />
                     Total Pick-Point
                   </div>
-                  <Badge className="rounded-lg font-black">{rayonPoints.length}</Badge>
+                  <Badge className={cn("rounded-lg font-black text-white", rayonColor.bg)}>{rayonPoints.length}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-[10px] font-black uppercase opacity-40">
-                    <Calendar className="h-3.5 w-3.5" />
+                    <Calendar className={cn("h-3.5 w-3.5", rayonColor.text)} />
                     Dibuat Pada
                   </div>
                   <span className="text-[10px] font-bold">{formatDate(r.created_at)}</span>
                 </div>
-                <Button variant="outline" className="w-full rounded-xl font-black uppercase text-[10px] tracking-widest border-2 h-10 group-hover:bg-primary group-hover:text-white group-hover:border-primary transition-all">
+                <Button variant="outline" className={cn("w-full rounded-xl font-black uppercase text-[10px] tracking-widest border-2 h-10 transition-all", rayonColor.border, rayonColor.text, "hover:bg-primary hover:text-white hover:border-primary")}>
                   Lihat Detail Rayon <ChevronRight className="h-3 w-3 ml-2" />
                 </Button>
               </CardContent>
