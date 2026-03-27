@@ -9,14 +9,15 @@ import {
   LayersControl, 
   LayerGroup,
   Tooltip,
-  useMap
+  useMap,
+  useMapEvents
 } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
 import { supabase } from "@/integrations/supabase/client";
 import { useDrivers, usePickupPoints, useRayons, DbRayon } from "@/hooks/use-supabase-data";
 import { Badge } from "@/components/ui/badge";
-import { 
+import {
   Bus, 
   Clock, 
   Layers, 
@@ -45,8 +46,11 @@ const createBusIcon = (color: string, bearing: number = 0) =>
   L.divIcon({
     className: "fleet-bus-marker",
     html: `<div style="
-      width:36px;height:36px;border-radius:50%;
-      background:${color};border:3px solid white;
+      width:36px;
+      height:36px;
+      border-radius:50%;
+      background:${color};
+      border:3px solid white;
       box-shadow:0 4px 12px rgba(0,0,0,0.3);
       display:flex;align-items:center;justify-content:center;
       color:white;font-size:18px;
@@ -83,6 +87,18 @@ function AutoZoom({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
   return null;
 }
 
+/**
+ * MapEvents handles base layer changes and persists them
+ */
+function MapEvents({ onLayerChange }: { onLayerChange: (name: string) => void }) {
+  useMapEvents({
+    baselayerchange: (e) => {
+      onLayerChange(e.name);
+    },
+  });
+  return null;
+}
+
 // ─── Main Component ──────────────────────────────────────────────
 
 export default function FleetMap() {
@@ -95,6 +111,17 @@ export default function FleetMap() {
   const [selectedRayonId, setSelectedRayonId] = useState<string>("all");
   const [routeGeometries, setRouteGeometries] = useState<Record<string, [number, number][]>>({});
   const [isLoadingRoutes, setIsLoadingRoutes] = useState(false);
+
+  // --- Map Layer Preference ---
+  const [activeLayer, setActiveLayer] = useState<string>(() => {
+    return localStorage.getItem("fleet-map-layer") || "Street Map";
+  });
+
+  // Handle Layer Change
+  const handleLayerChange = useCallback((name: string) => {
+    localStorage.setItem("fleet-map-layer", name);
+    setActiveLayer(name);
+  }, []);
 
   // Memoized processed pickup points
   const pickupPoints = useMemo(() => 
@@ -300,15 +327,20 @@ export default function FleetMap() {
         className="h-full w-full z-0"
         zoomControl={false}
       >
+        <MapEvents onLayerChange={handleLayerChange} />
         <LayersControl position="bottomright">
-          <LayersControl.BaseLayer checked name="Modern Dark">
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+          <LayersControl.BaseLayer checked={activeLayer === "Street Map"} name="Street Map">
+            <TileLayer 
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            />
           </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer name="Street Map">
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer name="Satellite">
-            <TileLayer url="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}" subdomains={['mt0', 'mt1', 'mt2', 'mt3']} />
+          <LayersControl.BaseLayer checked={activeLayer === "Satellite Map"} name="Satellite Map">
+            <TileLayer 
+              url="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}" 
+              subdomains={['mt0', 'mt1', 'mt2', 'mt3']} 
+              attribution='&copy; Google Maps'
+            />
           </LayersControl.BaseLayer>
 
           {/* ─── Rayon Layers ─── */}
