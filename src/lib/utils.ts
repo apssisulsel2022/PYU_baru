@@ -32,7 +32,17 @@ const RAYON_PALETTE = [
   { bg: "bg-violet-500", text: "text-violet-500", border: "border-violet-500", hex: "#8b5cf6", light: "bg-violet-50" },
 ];
 
-export function getRayonColor(rayonId: string | null | undefined) {
+export function getRayonColor(rayonId: string | null | undefined, dbColor?: string) {
+  if (dbColor) {
+    return { 
+      bg: `bg-[${dbColor}]`, 
+      text: `text-[${dbColor}]`, 
+      border: `border-[${dbColor}]`, 
+      hex: dbColor, 
+      light: `${dbColor}10` // Approximation for light bg
+    };
+  }
+
   if (!rayonId) return { bg: "bg-zinc-500", text: "text-zinc-500", border: "border-zinc-500", hex: "#71717a", light: "bg-zinc-50" };
   
   // Use a simple hash to consistently map ID to an index

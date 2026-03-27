@@ -22,8 +22,13 @@ export default function RayonsManagement() {
   
   const [searchQuery, setSearchQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ id: "", name: "", description: "" });
+  const [form, setForm] = useState({ id: "", name: "", description: "", color: "#3b82f6" });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const PRESET_COLORS = [
+    "#3b82f6", "#10b981", "#f97316", "#a855f7", "#ec4899", 
+    "#06b6d4", "#f59e0b", "#6366f1", "#f43f5e", "#8b5cf6"
+  ];
 
   const filteredRayons = useMemo(() => {
     return rayons.filter(r => 
@@ -33,12 +38,12 @@ export default function RayonsManagement() {
   }, [rayons, searchQuery]);
 
   const openAdd = () => {
-    setForm({ id: "", name: "", description: "" });
+    setForm({ id: "", name: "", description: "", color: "#3b82f6" });
     setDialogOpen(true);
   };
 
   const openEdit = (r: any) => {
-    setForm({ id: r.id, name: r.name, description: r.description || "" });
+    setForm({ id: r.id, name: r.name, description: r.description || "", color: r.color || "#3b82f6" });
     setDialogOpen(true);
   };
 
@@ -53,7 +58,8 @@ export default function RayonsManagement() {
       await upsert.mutateAsync({
         id: form.id || undefined,
         name: form.name,
-        description: form.description
+        description: form.description,
+        color: form.color
       });
       toast.success(form.id ? "Rayon diperbarui" : "Rayon ditambahkan");
       setDialogOpen(false);
@@ -134,15 +140,15 @@ export default function RayonsManagement() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredRayons.map(r => {
           const rayonPoints = points.filter(p => p.rayonId === r.id);
-          const rayonColor = getRayonColor(r.id);
+          const rayonColor = getRayonColor(r.id, r.color);
           return (
-            <Card key={r.id} className={cn("rounded-[2rem] border-2 shadow-md hover:shadow-xl transition-all group overflow-hidden", rayonColor.border, "bg-background")}>
-              <CardHeader className={cn("p-6 border-b relative overflow-hidden", rayonColor.light)}>
-                <div className={cn("absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform", rayonColor.text)}>
+            <Card key={r.id} className={cn("rounded-[2rem] border-2 shadow-md hover:shadow-xl transition-all group overflow-hidden bg-background")}>
+              <CardHeader className={cn("p-6 border-b relative overflow-hidden")} style={{ backgroundColor: `${rayonColor.hex}08` }}>
+                <div className={cn("absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform")} style={{ color: rayonColor.hex }}>
                   <Layers size={100} />
                 </div>
                 <div className="flex justify-between items-start relative z-10">
-                  <Badge variant="outline" className={cn("bg-background font-black uppercase tracking-widest text-[9px] px-2", rayonColor.border, rayonColor.text)}>
+                  <Badge variant="outline" className={cn("bg-background font-black uppercase tracking-widest text-[9px] px-2")} style={{ borderColor: rayonColor.hex, color: rayonColor.hex }}>
                     Region ID: {r.id.slice(0, 8)}
                   </Badge>
                   <div className="flex gap-1">
@@ -154,7 +160,7 @@ export default function RayonsManagement() {
                     </Button>
                   </div>
                 </div>
-                <CardTitle className={cn("text-xl font-black uppercase tracking-tight mt-4 transition-colors", rayonColor.text)}>{r.name}</CardTitle>
+                <CardTitle className={cn("text-xl font-black uppercase tracking-tight mt-4 transition-colors")} style={{ color: rayonColor.hex }}>{r.name}</CardTitle>
                 <CardDescription className="line-clamp-2 text-[10px] font-bold uppercase tracking-wider min-h-[30px] opacity-60">
                   {r.description || "Tidak ada deskripsi"}
                 </CardDescription>
@@ -162,19 +168,19 @@ export default function RayonsManagement() {
               <CardContent className="p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-[10px] font-black uppercase opacity-40">
-                    <MapPin className={cn("h-3.5 w-3.5", rayonColor.text)} />
+                    <MapPin className={cn("h-3.5 w-3.5")} style={{ color: rayonColor.hex }} />
                     Total Pick-Point
                   </div>
-                  <Badge className={cn("rounded-lg font-black text-white", rayonColor.bg)}>{rayonPoints.length}</Badge>
+                  <Badge className={cn("rounded-lg font-black text-white")} style={{ backgroundColor: rayonColor.hex }}>{rayonPoints.length}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-[10px] font-black uppercase opacity-40">
-                    <Calendar className={cn("h-3.5 w-3.5", rayonColor.text)} />
+                    <Calendar className={cn("h-3.5 w-3.5")} style={{ color: rayonColor.hex }} />
                     Dibuat Pada
                   </div>
                   <span className="text-[10px] font-bold">{formatDate(r.created_at)}</span>
                 </div>
-                <Button variant="outline" className={cn("w-full rounded-xl font-black uppercase text-[10px] tracking-widest border-2 h-10 transition-all", rayonColor.border, rayonColor.text, "hover:bg-primary hover:text-white hover:border-primary")}>
+                <Button variant="outline" className={cn("w-full rounded-xl font-black uppercase text-[10px] tracking-widest border-2 h-10 transition-all hover:bg-primary hover:text-white hover:border-primary")} style={{ borderColor: rayonColor.hex, color: rayonColor.hex }}>
                   Lihat Detail Rayon <ChevronRight className="h-3 w-3 ml-2" />
                 </Button>
               </CardContent>
@@ -224,6 +230,45 @@ export default function RayonsManagement() {
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))} 
                 className="h-12 font-bold rounded-xl border-2 focus:ring-primary/20" 
               />
+            </div>
+
+            <div>
+              <Label className="text-[10px] font-black uppercase tracking-widest mb-2 block">Warna Rayon (Identitas Visual)</Label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {PRESET_COLORS.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={cn(
+                      "w-8 h-8 rounded-full border-2 transition-all",
+                      form.color === c ? "border-primary scale-110 shadow-md" : "border-transparent opacity-60 hover:opacity-100"
+                    )}
+                    style={{ backgroundColor: c }}
+                    onClick={() => setForm(f => ({ ...f, color: c }))}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <Input 
+                  type="color"
+                  value={form.color}
+                  onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
+                  className="w-12 h-12 p-1 rounded-lg cursor-pointer border-2"
+                />
+                <Input 
+                  value={form.color}
+                  onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
+                  placeholder="#000000"
+                  className="h-12 rounded-xl border-2 font-mono font-bold flex-1 focus:ring-primary/20"
+                />
+                <div 
+                  className="w-12 h-12 rounded-xl border-2 shadow-inner" 
+                  style={{ backgroundColor: form.color }} 
+                />
+              </div>
+              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-2">
+                Warna ini akan digunakan untuk marker armada dan rute di Live Fleet Map.
+              </p>
             </div>
 
             <div>

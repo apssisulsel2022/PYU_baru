@@ -7,7 +7,7 @@ import {
   ArrowUpDown, ChevronDown, Check, Upload, FileSpreadsheet,
   ChevronLeft, ChevronRight, FileUp
 } from "lucide-react";
-import { usePickupPoints, useRayons, DbPickupPoint, DbRayon } from "@/hooks/use-supabase-data";
+import { usePickupPoints, useRayons, DbRayon } from "@/hooks/use-supabase-data";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
