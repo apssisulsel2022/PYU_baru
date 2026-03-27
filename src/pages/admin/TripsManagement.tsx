@@ -1,14 +1,16 @@
-import { useState, useMemo, useEffect } from "react";
+import { calculateTicketPrice, calculateComprehensivePricing } from "@/lib/pricing";
 import { 
   Plus, Pencil, Map as MapIcon, Navigation, 
   Clock, Calendar, Search, Filter, Download, 
   FileText, List, LayoutGrid, Bus, User, 
   AlertCircle, CheckCircle2, Flag, ChevronRight,
   MoreVertical, ArrowUpRight, Activity, X, CalendarDays,
-  Calendar as CalendarIcon, Trash2, DollarSign, AlignLeft
+  Calendar as CalendarIcon, Trash2, DollarSign, AlignLeft,
+  Calculator, Receipt, Percent, ShieldCheck, ShieldAlert,
+  ArrowRight
 } from "lucide-react";
 import { formatPrice, VEHICLE_LAYOUTS } from "@/data/shuttle-data";
-import { useTrips, useDrivers, usePickupPoints, useRayons, toTrip, DbTrip } from "@/hooks/use-supabase-data";
+import { useTrips, useDrivers, usePickupPoints, useRayons, DbTrip, toTrip, usePricingConfigs } from "@/hooks/use-supabase-data";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +31,7 @@ import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
 import { DateRange } from "react-day-picker";
 
 import { Textarea } from "@/components/ui/textarea";
+import { calculateTicketPrice, getServiceScale } from "@/lib/pricing";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,6 +82,7 @@ export default function TripsManagement() {
   const { data: drivers = [] } = useDrivers();
   const { data: pickupPoints = [] } = usePickupPoints();
   const { data: rayons = [] } = useRayons();
+  const { data: pricingConfigs = [] } = usePricingConfigs();
   
   const [viewMode, setViewMode] = useState<"table" | "monitor">("table");
   const [searchQuery, setSearchQuery] = useState("");
@@ -103,8 +107,35 @@ export default function TripsManagement() {
     rayon_id: "",
     start_pickup_point_id: "",
     budget: "",
-    description: ""
+    description: "",
+    distance_km: "0",
+    service_category: "Regular",
+    // Detailed Pricing Components
+    accommodation_cost: "0",
+    meal_cost: "0",
+    attraction_tickets_cost: "0",
+    guide_fee: "0",
+    other_costs: "0",
+    markup_percentage: "15",
+    tax_percentage: "11",
+    min_margin_percentage: "10"
   });
+
+  // Comprehensive Pricing Result
+  const pricingResult = useMemo(() => {
+    return calculateComprehensivePricing({
+      transportCost: Number(form.base_price) * Number(form.total_seats), // Total transport cost for trip
+      accommodationCost: Number(form.accommodation_cost),
+      meal_cost: Number(form.meal_cost),
+      attractionTicketsCost: Number(form.attraction_tickets_cost),
+      guideFee: Number(form.guide_fee),
+      otherCosts: Number(form.other_costs),
+      markupPercentage: Number(form.markup_percentage),
+      taxPercentage: Number(form.tax_percentage),
+      paxCount: Number(form.total_seats),
+      minMarginPercentage: Number(form.min_margin_percentage)
+    } as any);
+  }, [form]);
 
   // Filtered Pickup Points based on selected Rayon in form
   const availablePickupPoints = useMemo(() => {
@@ -147,6 +178,23 @@ export default function TripsManagement() {
     activeTrip?.driver_id ? drivers.find(d => d.id === activeTrip.driver_id) : null
   , [activeTrip, drivers]);
 
+  // Pricing calculation effect
+  useEffect(() => {
+    const config = pricingConfigs.find(c => c.service_category === form.service_category);
+    if (config) {
+      const distance = Number(form.distance_km);
+      if (distance >= 0) {
+        const calculatedPrice = calculateTicketPrice(
+          distance,
+          config.base_price,
+          config.price_per_km,
+          config.rounding_multiple
+        );
+        setForm(f => ({ ...f, base_price: String(calculatedPrice) }));
+      }
+    }
+  }, [form.distance_km, form.service_category, pricingConfigs]);
+
   const openAdd = () => {
     setEditing(null);
     setForm({ 
@@ -161,7 +209,9 @@ export default function TripsManagement() {
       rayon_id: "",
       start_pickup_point_id: "",
       budget: "",
-      description: ""
+      description: "",
+      distance_km: "0",
+      service_category: "Regular"
     });
     setDialogOpen(true);
   };
@@ -180,7 +230,9 @@ export default function TripsManagement() {
       rayon_id: t.rayon_id || "",
       start_pickup_point_id: t.start_pickup_point_id || "",
       budget: String(t.budget || ""),
-      description: t.description || ""
+      description: t.description || "",
+      distance_km: "0", // Default or could be stored in DB if column exists
+      service_category: "Regular"
     });
     setDialogOpen(true);
   };
@@ -685,15 +737,25 @@ export default function TripsManagement() {
 
       {/* CRUD Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+        <DialogContent className="max-w-5xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
           <div className="bg-primary/5 px-8 py-6 border-b border-primary/10">
             <DialogHeader>
-              <DialogTitle className="text-4xl font-black uppercase tracking-tighter italic text-primary">
-                {editing ? "Modify Mission" : "New Mission"}
-              </DialogTitle>
-              <DialogDescription className="font-bold uppercase text-[11px] tracking-[0.2em] opacity-60">
-                Configure route and assign driver for PYU-GO fleet
-              </DialogDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-4xl font-black uppercase tracking-tighter italic text-primary">
+                    {editing ? "Modify Mission" : "New Mission"}
+                  </DialogTitle>
+                  <DialogDescription className="font-bold uppercase text-[11px] tracking-[0.2em] opacity-60">
+                    Comprehensive trip pricing & route configuration
+                  </DialogDescription>
+                </div>
+                {!pricingResult.isMarginValid && (
+                  <Badge variant="destructive" className="h-10 px-4 rounded-xl animate-pulse flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4" />
+                    <span className="font-black uppercase text-[10px]">Margin Warning</span>
+                  </Badge>
+                )}
+              </div>
             </DialogHeader>
           </div>
 
@@ -762,13 +824,42 @@ export default function TripsManagement() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Base Price (IDR)</Label>
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Distance (KM)</Label>
                       <Input 
                         type="number" 
                         className="font-black h-12 rounded-xl border-2 focus:ring-primary/20" 
-                        value={form.base_price} 
-                        onChange={e => setForm(f => ({ ...f, base_price: e.target.value }))} 
+                        value={form.distance_km} 
+                        onChange={e => setForm(f => ({ ...f, distance_km: e.target.value }))} 
+                        placeholder="0"
                       />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Service Category</Label>
+                      <Select value={form.service_category} onValueChange={(v) => setForm(f => ({ ...f, service_category: v }))}>
+                        <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl border-2 focus:ring-primary/20">
+                          <SelectValue placeholder="Select Category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {pricingConfigs.map(c => (
+                            <SelectItem key={c.id} value={c.service_category} className="font-bold uppercase text-[10px]">{c.service_category}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Calculated Ticket Price (IDR)</Label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 opacity-30" />
+                        <Input 
+                          type="number" 
+                          className="font-black h-12 rounded-xl border-2 bg-primary/5 border-primary/20 pl-9" 
+                          value={form.base_price} 
+                          readOnly
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -838,6 +929,88 @@ export default function TripsManagement() {
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
                     <DollarSign className="h-3 w-3" /> Financials & Notes
                   </h3>
+
+                  {/* Comprehensive Pricing Analysis Card */}
+                  <div className={cn(
+                    "p-4 rounded-xl border-2 transition-all",
+                    pricingResult.isMarginValid ? "bg-emerald-50/50 border-emerald-200" : "bg-red-50/50 border-red-200"
+                  )}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Calculator className="h-4 w-4 text-primary" />
+                        <span className="text-[11px] font-black uppercase tracking-tight">Pricing Analysis</span>
+                      </div>
+                      <Badge className={cn("rounded-full font-black uppercase text-[9px]", pricingResult.isMarginValid ? "bg-emerald-500" : "bg-red-500")}>
+                        {pricingResult.isMarginValid ? "Margin OK" : "Margin Low"}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase">Total Cost</p>
+                        <p className="text-sm font-black">{formatPrice(pricingResult.totalCost)}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase">Actual Margin</p>
+                        <p className={cn("text-sm font-black", pricingResult.isMarginValid ? "text-emerald-600" : "text-red-600")}>
+                          {pricingResult.actualMarginPercentage.toFixed(1)}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-dashed border-border flex items-center justify-between">
+                      <div>
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase">Final Pax Price</p>
+                        <p className="text-xl font-black text-primary">{formatPrice(pricingResult.finalPricePerPax)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase">Profit/Trip</p>
+                        <p className="text-sm font-black text-emerald-600">+{formatPrice(pricingResult.profitAmount)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Accommodation Cost</Label>
+                      <Input 
+                        type="number" 
+                        className="font-black h-12 rounded-xl border-2" 
+                        value={form.accommodation_cost} 
+                        onChange={e => setForm(f => ({ ...f, accommodation_cost: e.target.value }))} 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Meal Cost</Label>
+                      <Input 
+                        type="number" 
+                        className="font-black h-12 rounded-xl border-2" 
+                        value={form.meal_cost} 
+                        onChange={e => setForm(f => ({ ...f, meal_cost: e.target.value }))} 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Markup (%)</Label>
+                      <Input 
+                        type="number" 
+                        className="font-black h-12 rounded-xl border-2" 
+                        value={form.markup_percentage} 
+                        onChange={e => setForm(f => ({ ...f, markup_percentage: e.target.value }))} 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-70">Min. Margin (%)</Label>
+                      <Input 
+                        type="number" 
+                        className="font-black h-12 rounded-xl border-2" 
+                        value={form.min_margin_percentage} 
+                        onChange={e => setForm(f => ({ ...f, min_margin_percentage: e.target.value }))} 
+                      />
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">

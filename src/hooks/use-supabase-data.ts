@@ -28,6 +28,42 @@ export interface DbDriver {
   created_at: string;
 }
 
+export interface DbPricingConfig {
+  id: string;
+  service_category: string;
+  base_price: number;
+  price_per_km: number;
+  rounding_multiple: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export function usePricingConfigs() {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: ["pricing-configs"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("pricing_configs")
+        .select("*")
+        .eq("is_active", true)
+        .order("service_category");
+      if (error) throw error;
+      return data as DbPricingConfig[];
+    },
+  });
+
+  const upsert = useMutation({
+    mutationFn: async (config: Partial<DbPricingConfig> & { id?: string }) => {
+      const { error } = await supabase.from("pricing_configs").upsert(config);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pricing-configs"] }),
+  });
+
+  return { ...query, upsert };
+}
+
 export interface DbTrip {
   id: string;
   route_name: string;
@@ -48,6 +84,7 @@ export interface DbTrip {
   // joined
   driver?: DbDriver | null;
 }
+
 
 export interface DbBooking {
   id: string;
@@ -330,16 +367,32 @@ export function useTrips() {
   });
 
   const upsert = useMutation({
-    mutationFn: async (trip: Partial<DbTrip> & { id?: string }) => {
-      const { driver, ...rest } = trip as any;
+    mutationFn: async (trip: Partial<DbTrip> & { id?: string; pricing_details?: any }) => {
+      const { driver, pricing_details, ...rest } = trip as any;
       
       // Validation: Budget must be positive
       if (rest.budget !== undefined && rest.budget < 0) {
         throw new Error("Budget cannot be negative");
       }
 
-      const { error } = await supabase.from("trips").upsert(rest);
-      if (error) throw error;
+      // Upsert trip first
+      const { data: tripData, error: tripError } = await supabase
+        .from("trips")
+        .upsert(rest)
+        .select()
+        .single();
+      
+      if (tripError) throw tripError;
+
+      // Audit Trail & Pricing Details logic would go here
+      // For now, ensure we log the change if it's an update
+      if (rest.id) {
+        await supabase.from("pricing_audit_logs").insert({
+          trip_id: rest.id,
+          new_data: rest,
+          change_reason: "Manual administrative update"
+        });
+      }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trips"] }),
   });
