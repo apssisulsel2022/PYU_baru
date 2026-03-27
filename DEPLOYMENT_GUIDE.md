@@ -1,7 +1,7 @@
-# Deployment & Maintenance Guide: SeatGo Management System
+# Deployment & Maintenance Guide: PYU-GO Management System
 
 ## 1. Overview
-Sistem manajemen SeatGo kini telah terintegrasi penuh dengan Supabase Auth, Row Level Security (RLS), dan Real-time database. Panduan ini menjelaskan langkah-langkah untuk mendeploy dan memelihara sistem ini.
+Sistem manajemen PYU-GO kini telah terintegrasi penuh dengan Supabase Auth, Row Level Security (RLS), dan Real-time database. Panduan ini menjelaskan langkah-langkah untuk mendeploy dan memelihara sistem ini.
 
 ## 2. Prerequisites
 - Node.js & npm/yarn

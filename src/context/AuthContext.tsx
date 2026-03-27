@@ -29,13 +29,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Try to load profile from cache first (Offline/Fast Support)
-    const cachedProfile = localStorage.getItem("sg_profile");
+    const cachedProfile = localStorage.getItem("pyu_profile");
     if (cachedProfile) {
       try {
         setProfile(JSON.parse(cachedProfile));
         // We still set loading to true initially to verify session
       } catch (e) {
-        localStorage.removeItem("sg_profile");
+        localStorage.removeItem("pyu_profile");
       }
     }
 
@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fetchProfile(session.user.id);
       } else {
         setProfile(null);
-        localStorage.removeItem("sg_profile");
+        localStorage.removeItem("pyu_profile");
         setIsLoading(false);
       }
     });
@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await fetchProfile(session.user.id);
       } else if (event === "SIGNED_OUT") {
         setProfile(null);
-        localStorage.removeItem("sg_profile");
+        localStorage.removeItem("pyu_profile");
         setIsLoading(false);
       } else if (session?.user) {
         // Refresh profile if needed but don't block
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profileRes.error) {
         console.error("Error fetching profile:", profileRes.error);
         // Don't clear profile if we have cache and network fails
-        if (!localStorage.getItem("sg_profile")) setProfile(null);
+        if (!localStorage.getItem("pyu_profile")) setProfile(null);
       } else if (profileRes.data) {
         const { is_admin, is_driver } = loginInfoRes.data as any || {};
         let role: UserRole = "passenger";
@@ -98,23 +98,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         else if (is_driver) role = "driver";
 
         const newProfile = {
-          id: profileRes.data.id,
-          full_name: profileRes.data.full_name ?? undefined,
-          phone: profileRes.data.phone ?? undefined,
+          id: userId,
           role,
+          full_name: profileRes.data.full_name,
+          phone: profileRes.data.phone,
         };
-        
         setProfile(newProfile);
-        localStorage.setItem("sg_profile", JSON.stringify(newProfile));
+        localStorage.setItem("pyu_profile", JSON.stringify(newProfile));
+        setIsLoading(false);
       } else {
         setProfile(null);
-        localStorage.removeItem("sg_profile");
+        localStorage.removeItem("pyu_profile");
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error("Profile fetch failed:", err);
-      if (!localStorage.getItem("sg_profile")) setProfile(null);
+    } catch (e) {
+      console.error("Profile fetch error:", e);
+      if (!localStorage.getItem("pyu_profile")) setProfile(null);
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }
 
   const signOut = async () => {

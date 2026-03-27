@@ -8,7 +8,7 @@ Berdasarkan kebutuhan sistem, alur kerja saat ini mengharuskan pengguna untuk:
 4. Jika valid, pengguna diarahkan ke peta pelacakan driver.
 
 ### Identifikasi Kekurangan & Inefisiensi:
-- **Friction Tinggi**: Input manual nomor tiket (misal: `SG-XXXX`) seringkali sulit dilakukan di perangkat mobile dan rawan kesalahan pengetikan.
+- **Friction Tinggi**: Input manual nomor tiket (misal: `PYU-XXXX`) seringkali sulit dilakukan di perangkat mobile dan rawan kesalahan pengetikan.
 - **Ketergantungan Barcode**: Scan barcode memerlukan akses kamera dan kondisi pencahayaan yang baik, serta mengharuskan pengguna memiliki tiket di layar lain atau tercetak.
 - **Autentikasi Lemah**: Validasi hanya berdasarkan nomor tiket tanpa verifikasi tambahan (seperti nomor telepon) kurang aman jika nomor tiket bocor.
 - **Fragmentasi Data**: Pengguna harus menyimpan nomor tiket sendiri daripada sistem yang mengingatnya untuk mereka.

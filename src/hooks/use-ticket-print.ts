@@ -103,13 +103,11 @@ export function useTicketPrint() {
       }
 
       const filename = tickets.length === 1 
-        ? `Ticket_SG-${tickets[0].id.slice(0, 8).toUpperCase()}.pdf`
-        : `Bulk_Tickets_${new Date().toISOString().split('T')[0]}.pdf`;
-        
+        ? `PYU-GO-Ticket-${tickets[0].passenger_name.replace(/\s+/g, '-').toUpperCase()}.pdf`
+        : `PYU-GO-Bulk-Tickets-${new Date().getTime()}.pdf`;
+
       pdf.save(filename);
-      
-      await logPrintAction(tickets.map(t => t.id));
-      toast.success("PDF generated successfully", { id: toastId });
+      toast.success(`${tickets.length} ticket(s) exported as PDF`, { id: toastId });
     } catch (error) {
       console.error("PDF Export failed:", error);
       toast.error("Failed to generate PDF", { id: toastId });

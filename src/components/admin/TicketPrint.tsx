@@ -51,13 +51,13 @@ export const TicketPrint = forwardRef<HTMLDivElement, TicketPrintProps>(({ ticke
                       <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
                         <Bus size={18} />
                       </div>
-                      <h1 className="text-2xl font-black uppercase tracking-tighter italic">SeatGo</h1>
+                      <h1 className="text-2xl font-black uppercase tracking-tighter italic">PYU-GO</h1>
                     </div>
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">Official Travel Manifest</p>
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Ticket ID</p>
-                    <p className="text-xl font-black uppercase font-mono">SG-{ticket.id.slice(0, 8).toUpperCase()}</p>
+                    <p className="text-xl font-black uppercase font-mono">PYU-{ticket.id.slice(0, 8).toUpperCase()}</p>
                   </div>
                 </div>
 

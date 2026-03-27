@@ -268,7 +268,7 @@ export default function BookingsManagement() {
                       <div className="space-y-1">
                         <p className="text-xs font-black uppercase tracking-tight">{trip?.routeName || "Unknown Trip"}</p>
                         <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest bg-zinc-900 text-white border-0">
-                          {b.id.slice(0, 8)}
+                          PYU-{b.id.slice(0, 8).toUpperCase()}
                         </Badge>
                       </div>
                     </TableCell>
@@ -351,7 +351,7 @@ export default function BookingsManagement() {
                 <div className="flex justify-between items-start mb-6">
                   <div>
                     <DialogDescription className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70 mb-1 text-white">Ticket Manifest</DialogDescription>
-                    <DialogTitle className="text-3xl font-black uppercase tracking-tighter italic">SG-{selectedBooking.id.slice(0, 6).toUpperCase()}</DialogTitle>
+                    <DialogTitle className="text-3xl font-black uppercase tracking-tighter italic">PYU-{selectedBooking.id.slice(0, 6).toUpperCase()}</DialogTitle>
                   </div>
                   <Badge className="bg-white/20 text-white border-0 font-black uppercase text-[10px] tracking-widest">
                     {selectedBooking.status}

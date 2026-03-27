@@ -1,11 +1,11 @@
-# SeatGo Application Review & Audit Report
+# PYU-GO Application Review & Audit Report
 
 **Tanggal Audit:** 2026-03-27
 **Status Aplikasi:** Development / MVP Phase
 **Auditor:** AI Pair Programmer (Gemini-3-Flash)
 
 ## 1. Executive Summary
-Aplikasi SeatGo menunjukkan potensi besar dengan UI yang modern dan fitur-fitur yang inovatif (seperti Ticket Printing dan Driver Tracking). Namun, terdapat **risiko keamanan kritikal** pada lapisan basis data dan autentikasi yang harus segera ditangani sebelum aplikasi ini dapat digunakan di lingkungan produksi. Selain itu, terdapat *technical debt* yang signifikan dalam hal manajemen tipe data dan struktur kode.
+Aplikasi PYU-GO menunjukkan potensi besar dengan UI yang modern dan fitur-fitur yang inovatif (seperti Ticket Printing dan Driver Tracking). Namun, terdapat **risiko keamanan kritikal** pada lapisan basis data dan autentikasi yang harus segera ditangani sebelum aplikasi ini dapat digunakan di lingkungan produksi. Selain itu, terdapat *technical debt* yang signifikan dalam hal manajemen tipe data dan struktur kode.
 
 ---
 
@@ -59,4 +59,4 @@ Aplikasi SeatGo menunjukkan potensi besar dengan UI yang modern dan fitur-fitur 
 ---
 
 ## 4. Penutup
-SeatGo memiliki fondasi visual yang sangat baik, namun memerlukan penguatan pada sisi keamanan dan integritas data sebelum siap diluncurkan secara publik. Prioritas utama adalah mengamankan basis data dan mengimplementasikan sistem autentikasi yang sah.
+PYU-GO memiliki fondasi visual yang sangat baik, namun memerlukan penguatan pada sisi keamanan dan integritas data sebelum siap diluncurkan secara publik. Prioritas utama adalah mengamankan basis data dan mengimplementasikan sistem autentikasi yang sah.
