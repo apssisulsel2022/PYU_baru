@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect } from "react";
+import { lazy, Suspense } from "react";
 import { DollarSign, Users, Bus, ClipboardList, Star, MapPin } from "lucide-react";
 import { StatCard } from "@/components/admin/StatCard";
 import { formatPrice } from "@/data/shuttle-data";
@@ -7,12 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDrivers, useTrips, useBookings, usePickupPoints, useReviews, toTrip } from "@/hooks/use-supabase-data";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatDate } from "@/lib/utils";
 
 const FleetMap = lazy(() => import("@/components/admin/FleetMap"));
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const { data: drivers = [] } = useDrivers();
   const { data: dbTrips = [], isLoading } = useTrips();
   const { data: bookings = [] } = useBookings();
@@ -28,12 +31,17 @@ export default function AdminDashboard() {
   const avgRating = reviews.length > 0 ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1) : "0.0";
 
   // We need to fetch total users (profiles)
-  const [totalUsers, setTotalUsers] = useState(0);
-  useEffect(() => {
-    supabase.from("profiles").select("id", { count: "exact", head: true }).then(({ count }) => {
-      setTotalUsers(count || 0);
-    });
-  }, []);
+  const { data: totalUsers = 0 } = useQuery({
+    queryKey: ["total-users-count"],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("profiles")
+        .select("*", { count: "exact", head: true });
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!user,
+  });
 
   const statusColor: Record<string, string> = {
     paid: "bg-primary/10 text-primary border-primary/20",

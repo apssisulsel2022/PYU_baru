@@ -39,12 +39,14 @@ export function AdminSidebar() {
   const { data: pendingCount = 0 } = useQuery({
     queryKey: ["pending-drivers-count"],
     queryFn: async () => {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from("drivers")
-        .select("id", { count: "exact", head: true })
+        .select("*", { count: "exact", head: true })
         .eq("approval_status", "pending");
+      if (error) throw error;
       return count || 0;
     },
+    enabled: !!user,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
