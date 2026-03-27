@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { 
   Pencil, MapPin, Plus, Trash2, Search, 
   Phone, Clock, Map as MapIcon, X, Save, 
@@ -102,6 +102,23 @@ function MapEvents({ onMapClick }: { onMapClick: (lat: number, lng: number) => v
   return null;
 }
 
+// Component to handle auto-zoom when filter changes
+function AutoZoom({ points, filter }: { points: any[], filter: string }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (points.length > 0) {
+      const bounds = L.latLngBounds(points.map(p => p.coords));
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+    } else if (filter === "all") {
+      // Default center if no points
+      map.setView([-6.2088, 106.8456], 12);
+    }
+  }, [points, filter, map]);
+  
+  return null;
+}
+
 export default function PickupPointsManagement() {
   const { data: points = [], isLoading, upsert, softDelete, batchUpsert } = usePickupPoints();
   const { data: rayons = [] } = useRayons();
@@ -153,6 +170,18 @@ export default function PickupPointsManagement() {
   }, [filteredPoints, currentPage]);
 
   const totalPages = Math.ceil(filteredPoints.length / itemsPerPage);
+
+  const pointsByRayon = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    filteredPoints.forEach(p => {
+      if (!p.rayonId) return;
+      if (!groups[p.rayonId]) groups[p.rayonId] = [];
+      groups[p.rayonId].push(p);
+    });
+    // Sort each group by order index
+    Object.values(groups).forEach(group => group.sort((a, b) => a.order - b.order));
+    return groups;
+  }, [filteredPoints]);
 
   const openAdd = () => {
     setForm({ 
@@ -496,38 +525,64 @@ export default function PickupPointsManagement() {
             className="h-full w-full z-0"
           >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {filteredPoints.map(p => {
-              const rayonColor = getRayonColor(p.rayonId);
+            <AutoZoom points={filteredPoints} filter={rayonFilter} />
+            
+            {/* Draw Polylines for each Rayon */}
+            {Object.entries(pointsByRayon).map(([rayonId, rayonPoints]) => {
+              const color = getRayonColor(rayonId);
               return (
-                <Marker 
-                  key={p.id} 
-                  position={p.coords} 
-                  icon={createCustomIcon(p.label, p.isActive, p.rayonId)}
-                  eventHandlers={{
-                    click: () => {
-                      const found = points.find(pt => pt.id === p.id);
-                      if (found) openEdit(found);
-                    }
+                <Polyline 
+                  key={`poly-${rayonId}`}
+                  positions={rayonPoints.map(p => p.coords)}
+                  pathOptions={{ 
+                    color: color.hex, 
+                    weight: 4, 
+                    opacity: 0.6,
+                    dashArray: '10, 10'
                   }}
-                >
-                  <Popup className="custom-popup">
-                    <div className="p-3 min-w-[150px]">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={cn("w-6 h-6 rounded-full text-white flex items-center justify-center font-black text-[10px]", p.isActive ? rayonColor.bg : "bg-zinc-400")}>{p.label}</div>
-                        <p className={cn("font-black uppercase text-[11px] leading-tight", p.isActive ? rayonColor.text : "text-zinc-500")}>{p.name}</p>
-                      </div>
-                      <p className="text-[9px] font-bold opacity-70 uppercase mb-2">{p.address}</p>
-                      <div className="flex items-center justify-between pt-2 border-t border-dashed">
-                        <Badge variant="secondary" className={cn("text-[8px] font-black uppercase tracking-tighter", p.isActive ? rayonColor.light + " " + rayonColor.text : "")}>
-                          {rayons.find(r => r.id === p.rayonId)?.name || "N/A"}
-                        </Badge>
-                        <span className="text-[9px] font-black opacity-40 uppercase">Cap: {p.capacity}</span>
-                      </div>
-                    </div>
-                  </Popup>
-                </Marker>
+                />
               );
             })}
+
+            <MarkerClusterGroup
+              chunkedLoading
+              spiderfyOnMaxZoom={true}
+              showCoverageOnHover={false}
+              maxClusterRadius={40}
+            >
+              {filteredPoints.map(p => {
+                const rayonColor = getRayonColor(p.rayonId);
+                return (
+                  <Marker 
+                    key={p.id} 
+                    position={p.coords} 
+                    icon={createCustomIcon(p.label, p.isActive, p.rayonId)}
+                    eventHandlers={{
+                      click: () => {
+                        const found = points.find(pt => pt.id === p.id);
+                        if (found) openEdit(found);
+                      }
+                    }}
+                  >
+                    <Popup className="custom-popup">
+                      <div className="p-3 min-w-[150px]">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className={cn("w-6 h-6 rounded-full text-white flex items-center justify-center font-black text-[10px]", p.isActive ? rayonColor.bg : "bg-zinc-400")}>{p.label}</div>
+                          <p className={cn("font-black uppercase text-[11px] leading-tight", p.isActive ? rayonColor.text : "text-zinc-500")}>{p.name}</p>
+                        </div>
+                        <p className="text-[9px] font-bold opacity-70 uppercase mb-2">{p.address}</p>
+                        <div className="flex items-center justify-between pt-2 border-t border-dashed">
+                          <Badge variant="secondary" className={cn("text-[8px] font-black uppercase tracking-tighter", p.isActive ? rayonColor.light + " " + rayonColor.text : "")}>
+                            {rayons.find(r => r.id === p.rayonId)?.name || "N/A"}
+                          </Badge>
+                          <span className="text-[9px] font-black opacity-40 uppercase">Cap: {p.capacity}</span>
+                        </div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+            </MarkerClusterGroup>
           </MapContainer>
           <div className="absolute top-6 right-6 z-10 bg-background/90 backdrop-blur-md p-3 rounded-2xl border-2 shadow-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
