@@ -323,7 +323,9 @@ export type Database = {
           driver_id: string | null
           estimated_completion: string | null
           id: string
+          rayon_id: string | null
           route_name: string
+          start_pickup_point_id: string | null
           total_seats: number
           vehicle_type: string
         }
@@ -337,7 +339,9 @@ export type Database = {
           driver_id?: string | null
           estimated_completion?: string | null
           id?: string
+          rayon_id?: string | null
           route_name: string
+          start_pickup_point_id?: string | null
           total_seats?: number
           vehicle_type?: string
         }
@@ -351,7 +355,9 @@ export type Database = {
           driver_id?: string | null
           estimated_completion?: string | null
           id?: string
+          rayon_id?: string | null
           route_name?: string
+          start_pickup_point_id?: string | null
           total_seats?: number
           vehicle_type?: string
         }
@@ -361,6 +367,20 @@ export type Database = {
             columns: ["driver_id"]
             isOneToOne: false
             referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_rayon_id_fkey"
+            columns: ["rayon_id"]
+            isOneToOne: false
+            referencedRelation: "rayons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_start_pickup_point_id_fkey"
+            columns: ["start_pickup_point_id"]
+            isOneToOne: false
+            referencedRelation: "pickup_points"
             referencedColumns: ["id"]
           },
         ]

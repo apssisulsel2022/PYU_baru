@@ -40,6 +40,8 @@ export interface DbTrip {
   departure_date: string | null;
   estimated_completion: string | null;
   actual_completion: string | null;
+  rayon_id: string | null;
+  start_pickup_point_id: string | null;
   created_at: string;
   // joined
   driver?: DbDriver | null;
@@ -130,6 +132,8 @@ export function toTrip(t: DbTrip) {
     departureDate: t.departure_date,
     estimatedCompletion: t.estimated_completion,
     actualCompletion: t.actual_completion,
+    rayonId: t.rayon_id,
+    startPickupPointId: t.start_pickup_point_id,
     createdAt: t.created_at,
   };
 }

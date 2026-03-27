@@ -8,7 +8,7 @@ import {
   Calendar as CalendarIcon
 } from "lucide-react";
 import { formatPrice, VEHICLE_LAYOUTS } from "@/data/shuttle-data";
-import { useTrips, useDrivers, usePickupPoints, toTrip, DbTrip } from "@/hooks/use-supabase-data";
+import { useTrips, useDrivers, usePickupPoints, useRayons, toTrip, DbTrip } from "@/hooks/use-supabase-data";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, getRayonColor } from "@/lib/utils";
 import { format, isBefore, startOfDay, parseISO, isWithinInterval, endOfDay } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
@@ -66,6 +66,7 @@ export default function TripsManagement() {
   const { data: dbTrips = [], isLoading, upsert } = useTrips();
   const { data: drivers = [] } = useDrivers();
   const { data: pickupPoints = [] } = usePickupPoints();
+  const { data: rayons = [] } = useRayons();
   
   const [viewMode, setViewMode] = useState<"table" | "monitor">("table");
   const [searchQuery, setSearchQuery] = useState("");
@@ -83,16 +84,26 @@ export default function TripsManagement() {
     driver_id: "", 
     vehicle_type: "hiace",
     departure_date: format(new Date(), "yyyy-MM-dd"),
-    estimated_completion: format(new Date(), "yyyy-MM-dd")
+    estimated_completion: format(new Date(), "yyyy-MM-dd"),
+    rayon_id: "",
+    start_pickup_point_id: ""
   });
+
+  // Filtered Pickup Points based on selected Rayon in form
+  const availablePickupPoints = useMemo(() => {
+    if (!form.rayon_id) return [];
+    return pickupPoints.filter(p => p.rayonId === form.rayon_id);
+  }, [form.rayon_id, pickupPoints]);
 
   // Filtering Logic
   const filteredTrips = useMemo(() => {
     return dbTrips.filter(t => {
       const trip = toTrip(t);
+      const rayonName = rayons.find(r => r.id === t.rayon_id)?.name || "";
       const matchesSearch = trip.routeName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             trip.driverName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            trip.vehiclePlate.toLowerCase().includes(searchQuery.toLowerCase());
+                            trip.vehiclePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            rayonName.toLowerCase().includes(searchQuery.toLowerCase());
       
       const isActive = trip.driverId && drivers.find(d => d.id === trip.driverId)?.status === 'busy';
       const matchesStatus = statusFilter === 'all' || 
@@ -109,7 +120,7 @@ export default function TripsManagement() {
       
       return matchesSearch && matchesStatus && matchesDate;
     });
-  }, [dbTrips, searchQuery, statusFilter, dateRange, drivers]);
+  }, [dbTrips, searchQuery, statusFilter, dateRange, drivers, rayons]);
 
   const activeTrip = useMemo(() => 
     selectedTripId ? filteredTrips.find(t => t.id === selectedTripId) : null
@@ -129,7 +140,9 @@ export default function TripsManagement() {
       driver_id: "", 
       vehicle_type: "hiace",
       departure_date: format(new Date(), "yyyy-MM-dd"),
-      estimated_completion: format(new Date(), "yyyy-MM-dd")
+      estimated_completion: format(new Date(), "yyyy-MM-dd"),
+      rayon_id: "",
+      start_pickup_point_id: ""
     });
     setDialogOpen(true);
   };
@@ -144,14 +157,23 @@ export default function TripsManagement() {
       driver_id: t.driver_id || "",
       vehicle_type: t.vehicle_type || "hiace",
       departure_date: t.departure_date ? format(parseISO(t.departure_date), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
-      estimated_completion: t.estimated_completion ? format(parseISO(t.estimated_completion), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")
+      estimated_completion: t.estimated_completion ? format(parseISO(t.estimated_completion), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
+      rayon_id: t.rayon_id || "",
+      start_pickup_point_id: t.start_pickup_point_id || ""
     });
     setDialogOpen(true);
   };
 
   const handleSave = async () => {
-    if (!form.route_name || !form.departure_time || !form.departure_date || !form.estimated_completion) {
-      toast.error("Please fill all required fields");
+    if (!form.route_name || !form.departure_time || !form.departure_date || !form.estimated_completion || !form.rayon_id || !form.start_pickup_point_id) {
+      toast.error("Please fill all required fields including Rayon and Pickup Point");
+      return;
+    }
+
+    // Validation: Pickup Point must belong to Rayon
+    const selectedPoint = pickupPoints.find(p => p.id === form.start_pickup_point_id);
+    if (!selectedPoint || selectedPoint.rayonId !== form.rayon_id) {
+      toast.error("Invalid Pickup Point for the selected Rayon");
       return;
     }
 
@@ -179,7 +201,9 @@ export default function TripsManagement() {
         driver_id: form.driver_id || null,
         vehicle_type: form.vehicle_type,
         departure_date: new Date(form.departure_date).toISOString(),
-        estimated_completion: new Date(form.estimated_completion).toISOString()
+        estimated_completion: new Date(form.estimated_completion).toISOString(),
+        rayon_id: form.rayon_id,
+        start_pickup_point_id: form.start_pickup_point_id
       };
       if (editing) payload.id = editing.id;
       await upsert.mutateAsync(payload);
@@ -329,9 +353,16 @@ export default function TripsManagement() {
                           </div>
                           <div>
                             <p className="font-black uppercase tracking-tight text-base leading-none mb-1">{trip.routeName}</p>
-                            <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0">
-                              {VEHICLE_LAYOUTS[trip.vehicleType]?.label || trip.vehicleType}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0">
+                                {VEHICLE_LAYOUTS[trip.vehicleType]?.label || trip.vehicleType}
+                              </Badge>
+                              {t.rayon_id && (
+                                <Badge variant="secondary" className={cn("text-[8px] font-black uppercase tracking-widest px-1.5 py-0", getRayonColor(t.rayon_id).bg, "text-white border-0")}>
+                                  {rayons.find(r => r.id === t.rayon_id)?.name}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </TableCell>
@@ -425,8 +456,8 @@ export default function TripsManagement() {
               {/* Route Polyline if trip selected */}
               {activeTrip && (
                 <Polyline 
-                  positions={pickupPoints.map(p => p.coords)}
-                  color="#3b82f6"
+                  positions={pickupPoints.filter(p => p.rayonId === activeTrip.rayon_id).sort((a, b) => a.order - b.order).map(p => p.coords)}
+                  color={getRayonColor(activeTrip.rayon_id).hex}
                   weight={4}
                   opacity={0.6}
                   dashArray="10, 10"
@@ -434,7 +465,7 @@ export default function TripsManagement() {
               )}
 
               {/* Stop Markers */}
-              {pickupPoints.map((p, idx) => (
+              {(activeTrip ? pickupPoints.filter(p => p.rayonId === activeTrip.rayon_id) : pickupPoints).map((p, idx) => (
                 <Marker 
                   key={p.id} 
                   position={p.coords} 
@@ -615,6 +646,34 @@ export default function TripsManagement() {
             <DialogDescription className="font-bold uppercase text-[10px] tracking-widest">Configure route and assign driver</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest">Rayon</Label>
+                <Select value={form.rayon_id} onValueChange={(v) => setForm(f => ({ ...f, rayon_id: v, start_pickup_point_id: "" }))}>
+                  <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl">
+                    <SelectValue placeholder="Select Rayon" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rayons.map(r => (
+                      <SelectItem key={r.id} value={r.id} className="font-bold uppercase text-[10px]">{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest">Start Pickup Point</Label>
+                <Select value={form.start_pickup_point_id} onValueChange={(v) => setForm(f => ({ ...f, start_pickup_point_id: v }))} disabled={!form.rayon_id}>
+                  <SelectTrigger className="font-black uppercase text-xs h-12 rounded-xl">
+                    <SelectValue placeholder={form.rayon_id ? "Select Point" : "Select Rayon first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availablePickupPoints.map(p => (
+                      <SelectItem key={p.id} value={p.id} className="font-bold uppercase text-[10px]">{p.label} - {p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-widest">Route Name</Label>
               <Input className="font-bold" value={form.route_name} onChange={e => setForm(f => ({ ...f, route_name: e.target.value }))} placeholder="Rayon A - Express" />
