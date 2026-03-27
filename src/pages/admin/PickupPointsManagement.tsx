@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { 
   Pencil, MapPin, Plus, Trash2, Search, 
   Phone, Clock, Map as MapIcon, X, Save, 
   Navigation, Download, FileText, LayoutGrid, List,
   Image as ImageIcon, Layers, Users, Filter,
-  ArrowUpDown, ChevronDown, Check
+  ArrowUpDown, ChevronDown, Check, Upload, FileSpreadsheet,
+  ChevronLeft, ChevronRight, FileUp
 } from "lucide-react";
 import { usePickupPoints, useRayons, DbPickupPoint, DbRayon } from "@/hooks/use-supabase-data";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,7 +30,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Fix Leaflet marker icon issue
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -93,7 +99,7 @@ function MapEvents({ onMapClick }: { onMapClick: (lat: number, lng: number) => v
 }
 
 export default function PickupPointsManagement() {
-  const { data: points = [], isLoading, upsert, softDelete } = usePickupPoints();
+  const { data: points = [], isLoading, upsert, softDelete, batchUpsert } = usePickupPoints();
   const { data: rayons = [] } = useRayons();
   
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
@@ -103,6 +109,12 @@ export default function PickupPointsManagement() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<PointForm>(initialForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredPoints = useMemo(() => {
     let result = points.filter(p => {
@@ -110,7 +122,7 @@ export default function PickupPointsManagement() {
       const matchesSearch = 
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
         p.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.address || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
         rayonName.toLowerCase().includes(searchQuery.toLowerCase());
       
       const matchesRayon = rayonFilter === "all" || p.rayonId === rayonFilter;
@@ -130,6 +142,13 @@ export default function PickupPointsManagement() {
 
     return result;
   }, [points, searchQuery, rayonFilter, sortBy, rayons]);
+
+  const paginatedPoints = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredPoints.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredPoints, currentPage]);
+
+  const totalPages = Math.ceil(filteredPoints.length / itemsPerPage);
 
   const openAdd = () => {
     setForm({ 
@@ -166,6 +185,12 @@ export default function PickupPointsManagement() {
       return;
     }
 
+    // Coordinates validation
+    if (isNaN(form.lat) || isNaN(form.lng) || form.lat === 0 || form.lng === 0) {
+      toast.error("Koordinat geografis tidak valid");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       await upsert.mutateAsync({
@@ -199,10 +224,116 @@ export default function PickupPointsManagement() {
     
     try {
       await softDelete.mutateAsync(id);
-      toast.success("Pick-point berhasil dihapus (soft delete)");
+      toast.success("Pick-point berhasil dihapus");
     } catch (error: any) {
       toast.error("Gagal menghapus: " + error.message);
     }
+  };
+
+  // --- Export / Import Functions ---
+
+  const exportToExcel = () => {
+    const dataToExport = filteredPoints.map(p => ({
+      'ID': p.id,
+      'Label': p.label,
+      'Nama': p.name,
+      'Rayon': rayons.find(r => r.id === p.rayonId)?.name || 'N/A',
+      'Alamat': p.address || '',
+      'Telepon': p.phone || '',
+      'Jam Operasional': p.operatingHours || '',
+      'Waktu dari Start (Min)': p.minutesFromStart,
+      'Index Urutan': p.order,
+      'Latitude': p.coords[0],
+      'Longitude': p.coords[1],
+      'Status': p.isActive ? 'Aktif' : 'Non-aktif',
+      'Kapasitas': p.capacity
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "PickPoints");
+    XLSX.writeFile(wb, `PickPoints_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success("Data berhasil diexport ke Excel");
+  };
+
+  const exportToPDF = () => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    
+    doc.setFontSize(18);
+    doc.text("Daftar Pick-Point", 14, 22);
+    doc.setFontSize(10);
+    doc.text(`Dicetak pada: ${new Date().toLocaleString()}`, 14, 30);
+
+    const tableData = filteredPoints.map(p => [
+      p.label,
+      p.name,
+      rayons.find(r => r.id === p.rayonId)?.name || 'N/A',
+      p.address || '',
+      p.phone || '',
+      p.isActive ? 'Aktif' : 'Non-aktif',
+      p.capacity.toString()
+    ]);
+
+    autoTable(doc, {
+      head: [['Label', 'Nama', 'Rayon', 'Alamat', 'Telepon', 'Status', 'Cap']],
+      body: tableData,
+      startY: 35,
+      theme: 'grid',
+      headStyles: { fillColor: [33, 150, 243] },
+      styles: { fontSize: 8 }
+    });
+
+    doc.save(`PickPoints_Export_${new Date().toISOString().split('T')[0]}.pdf`);
+    toast.success("Data berhasil diexport ke PDF");
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+        if (data.length === 0) {
+          toast.error("File Excel kosong");
+          return;
+        }
+
+        const formattedData = data.map(item => {
+          // Find rayon ID by name if provided
+          const rayon = rayons.find(r => r.name.toLowerCase() === (item.Rayon || "").toLowerCase());
+          
+          return {
+            label: item.Label || "A",
+            name: item.Nama || "Unknown",
+            rayon_id: rayon?.id || item.RayonID || rayons[0]?.id,
+            address: item.Alamat || "",
+            phone: item.Telepon || "",
+            operating_hours: item['Jam Operasional'] || "",
+            minutes_from_start: parseInt(item['Waktu dari Start (Min)']) || 0,
+            order_index: parseInt(item['Index Urutan']) || 0,
+            lat: parseFloat(item.Latitude) || -6.2,
+            lng: parseFloat(item.Longitude) || 106.8,
+            is_active: item.Status === 'Aktif' || item.Status === true,
+            capacity: parseInt(item.Kapasitas) || 10
+          };
+        });
+
+        await batchUpsert.mutateAsync(formattedData);
+        toast.success(`${formattedData.length} data berhasil diimport`);
+      } catch (err: any) {
+        console.error(err);
+        toast.error("Gagal import file: " + err.message);
+      }
+    };
+    reader.readAsBinaryString(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleGeocode = async () => {
@@ -238,6 +369,14 @@ export default function PickupPointsManagement() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-20">
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept=".xlsx, .xls" 
+        onChange={handleImportExcel}
+      />
+
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -248,9 +387,27 @@ export default function PickupPointsManagement() {
           <Button variant="outline" size="icon" onClick={() => setViewMode(viewMode === "table" ? "grid" : "table")} className="rounded-xl border-2">
             {viewMode === "table" ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
           </Button>
-          <Button variant="outline" className="gap-2 font-bold uppercase text-xs rounded-xl border-2">
-            <Download className="h-4 w-4" /> Export
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2 font-bold uppercase text-xs rounded-xl border-2">
+                <Download className="h-4 w-4" /> Export / Import
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="rounded-xl border-2 w-56">
+              <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest opacity-50 px-2 py-1.5">Export Data</DropdownMenuLabel>
+              <DropdownMenuItem onClick={exportToExcel} className="font-bold gap-2 cursor-pointer">
+                <FileSpreadsheet className="h-4 w-4 text-green-600" /> Export Excel (.xlsx)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportToPDF} className="font-bold gap-2 cursor-pointer">
+                <FileText className="h-4 w-4 text-red-600" /> Export PDF (.pdf)
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest opacity-50 px-2 py-1.5">Import Data</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="font-bold gap-2 cursor-pointer">
+                <FileUp className="h-4 w-4 text-blue-600" /> Import from Excel
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button onClick={openAdd} className="shuttle-gradient gap-2 font-black uppercase text-xs rounded-xl shadow-lg shadow-primary/20">
             <Plus className="h-4 w-4" /> Tambah Point
           </Button>
@@ -277,10 +434,16 @@ export default function PickupPointsManagement() {
               placeholder="Cari nama, label, alamat, atau rayon..." 
               className="pl-12 h-14 rounded-2xl border-2 font-bold focus:ring-primary/20 transition-all"
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
             />
           </div>
-          <Select value={rayonFilter} onValueChange={setRayonFilter}>
+          <Select value={rayonFilter} onValueChange={(val) => {
+            setRayonFilter(val);
+            setCurrentPage(1);
+          }}>
             <SelectTrigger className="w-[200px] h-14 rounded-2xl border-2 font-bold">
               <div className="flex items-center gap-2">
                 <Layers className="h-4 w-4 opacity-50" />
@@ -319,8 +482,9 @@ export default function PickupPointsManagement() {
       </div>
 
       {/* Main Content Area */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Map View */}
+      {viewMode === "grid" ? (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Map View */}
         <Card className="xl:col-span-2 rounded-[2.5rem] overflow-hidden border-2 shadow-xl h-[650px] relative group">
           <MapContainer 
             center={[-6.2088, 106.8456]} 
@@ -419,18 +583,155 @@ export default function PickupPointsManagement() {
                   </div>
                 );
               })}
-              {filteredPoints.length === 0 && (
-                <div className="p-20 text-center flex flex-col items-center justify-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-                    <Search className="h-8 w-8 opacity-20" />
-                  </div>
-                  <p className="text-sm font-bold opacity-40 uppercase tracking-widest italic">Data tidak ditemukan</p>
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>
       </div>
+      ) : (
+        /* Full Table View with Pagination */
+        <Card className="rounded-[2.5rem] border-2 shadow-xl overflow-hidden bg-card/50 backdrop-blur-sm">
+          <CardHeader className="p-8 border-b bg-muted/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-xl font-black uppercase tracking-tight italic">Tabel Pick-Point</CardTitle>
+                <CardDescription className="text-[10px] font-bold uppercase tracking-widest opacity-60">Daftar lengkap lokasi penjemputan</CardDescription>
+              </div>
+              <div className="flex items-center gap-4">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Halaman {currentPage} dari {totalPages || 1}</p>
+                <div className="flex gap-1">
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(p => p - 1)}
+                    className="h-8 w-8 rounded-lg border-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    disabled={currentPage === totalPages || totalPages === 0}
+                    onClick={() => setCurrentPage(p => p + 1)}
+                    className="h-8 w-8 rounded-lg border-2"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30 hover:bg-muted/30 border-b-2">
+                  <TableHead className="w-16 text-center font-black uppercase text-[10px] tracking-widest py-6">Label</TableHead>
+                  <TableHead className="font-black uppercase text-[10px] tracking-widest py-6">Nama & Rayon</TableHead>
+                  <TableHead className="font-black uppercase text-[10px] tracking-widest py-6">Alamat</TableHead>
+                  <TableHead className="font-black uppercase text-[10px] tracking-widest py-6">Kontak & Jam</TableHead>
+                  <TableHead className="text-center font-black uppercase text-[10px] tracking-widest py-6">Kapasitas</TableHead>
+                  <TableHead className="text-center font-black uppercase text-[10px] tracking-widest py-6">Status</TableHead>
+                  <TableHead className="text-right font-black uppercase text-[10px] tracking-widest py-6 pr-8">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedPoints.map((p) => {
+                  const rayon = rayons.find(r => r.id === p.rayonId);
+                  return (                    <TableRow key={p.id} className="hover:bg-muted/50 transition-colors group">
+                      <TableCell className="text-center">
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs mx-auto shadow-sm",
+                          p.isActive ? "bg-primary text-white" : "bg-zinc-200 text-zinc-500"
+                        )}>
+                          {p.label}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <p className="font-black uppercase tracking-tight text-sm leading-none mb-1.5">{p.name}</p>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase tracking-tighter h-5 bg-background">
+                          {rayon?.name || "No Rayon"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-[10px] font-bold uppercase opacity-60 line-clamp-1 max-w-[200px]">{p.address || "-"}</p>
+                        <div className="flex items-center gap-1 mt-1">
+                          <MapPin className="h-3 w-3 text-primary opacity-50" />
+                          <span className="text-[9px] font-mono opacity-40">{p.coords[0].toFixed(4)}, {p.coords[1].toFixed(4)}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 text-[10px] font-bold uppercase opacity-60">
+                            <Phone className="h-3 w-3 text-primary" /> {p.phone || "-"}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] font-bold uppercase opacity-60">
+                            <Clock className="h-3 w-3 text-primary" /> {p.operatingHours || "24/7"}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className="font-black text-sm">{p.capacity}</span>
+                        <p className="text-[8px] font-black uppercase opacity-30">Pax</p>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge className={cn(
+                          "font-black uppercase text-[9px] px-2",
+                          p.isActive ? "bg-green-500/10 text-green-600 border-green-200" : "bg-zinc-100 text-zinc-400 border-zinc-200"
+                        )} variant="outline">
+                          {p.isActive ? "Aktif" : "Non-aktif"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right pr-8">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="secondary" size="icon" className="h-8 w-8 rounded-lg border" onClick={() => openEdit(p)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="secondary" size="icon" className="h-8 w-8 rounded-lg border text-destructive hover:bg-destructive/10" onClick={() => handleDelete(p.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {paginatedPoints.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-64 text-center">
+                      <div className="flex flex-col items-center justify-center gap-4 opacity-30">
+                        <Search className="h-12 w-12" />
+                        <p className="font-black uppercase tracking-widest italic text-sm">Data tidak ditemukan</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+          {totalPages > 1 && (
+            <div className="p-6 border-t bg-muted/10 flex items-center justify-between">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                Menampilkan {paginatedPoints.length} dari {filteredPoints.length} data
+              </p>
+              <div className="flex gap-2">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                  <Button 
+                    key={page}
+                    variant={currentPage === page ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCurrentPage(page)}
+                    className={cn(
+                      "h-8 w-8 rounded-lg font-black text-xs",
+                      currentPage === page ? "shuttle-gradient" : "border-2"
+                    )}
+                  >
+                    {page}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* CRUD Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -449,7 +750,7 @@ export default function PickupPointsManagement() {
             </div>
           </div>
           
-          <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
             <div className="space-y-6">
               <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-1">

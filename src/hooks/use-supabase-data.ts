@@ -259,7 +259,18 @@ export function usePickupPoints() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pickup_points"] }),
   });
 
-  return { ...query, upsert, softDelete };
+  const batchUpsert = useMutation({
+    mutationFn: async (points: (Partial<DbPickupPoint> & { id?: string })[]) => {
+      // For simplicity, we'll do them one by one to respect the duplicate name validation 
+      // OR we can do a single upsert if we don't care about the custom error message for each one.
+      // Let's do a single upsert for performance, and the DB will handle constraints if any.
+      const { error } = await supabase.from("pickup_points").upsert(points as any);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pickup_points"] }),
+  });
+
+  return { ...query, upsert, softDelete, batchUpsert };
 }
 
 export function useDrivers() {

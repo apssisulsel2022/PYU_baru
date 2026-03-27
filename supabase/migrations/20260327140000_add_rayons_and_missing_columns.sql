@@ -19,5 +19,10 @@ ALTER TABLE public.pickup_points
   ADD COLUMN IF NOT EXISTS capacity INTEGER DEFAULT 0,
   ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
 
+-- Add unique constraint for name within same rayon (excluding deleted ones)
+CREATE UNIQUE INDEX IF NOT EXISTS pickup_points_name_rayon_id_idx 
+ON public.pickup_points (name, rayon_id) 
+WHERE deleted_at IS NULL;
+
 -- Enable realtime for rayons
 ALTER PUBLICATION supabase_realtime ADD TABLE public.rayons;
