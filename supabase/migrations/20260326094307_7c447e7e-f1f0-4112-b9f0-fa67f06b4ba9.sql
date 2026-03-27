@@ -1,0 +1,1 @@
+ALTER TABLE public.trips ADD COLUMN vehicle_type text NOT NULL DEFAULT 'hiace';
