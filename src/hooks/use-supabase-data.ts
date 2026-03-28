@@ -55,7 +55,7 @@ export function usePricingConfigs() {
 
   const upsert = useMutation({
     mutationFn: async (config: Partial<DbPricingConfig> & { id?: string }) => {
-      const { error } = await supabase.from("pricing_configs").upsert(config);
+      const { error } = await supabase.from("pricing_configs").upsert(config as any);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pricing-configs"] }),
@@ -78,8 +78,8 @@ export interface DbTrip {
   actual_completion: string | null;
   rayon_id: string | null;
   start_pickup_point_id: string | null;
-  budget: number;
-  description?: string;
+  budget: number | null;
+  description: string | null;
   created_at: string;
   // joined
   driver?: DbDriver | null;
@@ -371,7 +371,7 @@ export function useTrips() {
       const { driver, pricing_details, ...rest } = trip as any;
       
       // Validation: Budget must be positive
-      if (rest.budget !== undefined && rest.budget < 0) {
+      if (rest.budget !== undefined && rest.budget !== null && rest.budget < 0) {
         throw new Error("Budget cannot be negative");
       }
 
@@ -384,14 +384,38 @@ export function useTrips() {
       
       if (tripError) throw tripError;
 
-      // Audit Trail & Pricing Details logic would go here
-      // For now, ensure we log the change if it's an update
+      const tripId = tripData.id;
+
+      // Upsert Pricing Details if provided
+      if (pricing_details) {
+        const pricingToSave = {
+          trip_id: tripId,
+          base_transport_cost: pricing_details.transportCost,
+          accommodation_cost: pricing_details.accommodationCost,
+          meal_cost: pricing_details.mealCost,
+          attraction_tickets_cost: pricing_details.attractionTicketsCost,
+          guide_fee: pricing_details.guideFee,
+          other_costs: pricing_details.otherCosts,
+          markup_amount: pricing_details.profitAmount,
+          tax_amount: pricing_details.taxAmount,
+          total_final_price: pricing_details.totalWithTax,
+          pax_count: pricing_details.paxCount
+        };
+
+        const { error: pricingError } = await supabase
+          .from("trip_pricing_details")
+          .upsert(pricingToSave as any, { onConflict: 'trip_id' });
+        
+        if (pricingError) console.error("Error saving pricing details:", pricingError);
+      }
+
+      // Audit Trail
       if (rest.id) {
         await supabase.from("pricing_audit_logs").insert({
-          trip_id: rest.id,
+          trip_id: tripId,
           new_data: rest,
           change_reason: "Manual administrative update"
-        });
+        } as any);
       }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trips"] }),
@@ -407,11 +431,19 @@ export function useTrips() {
 
   const completeTrip = useMutation({
     mutationFn: async (tripId: string) => {
+      const completionTime = new Date().toISOString();
       const { error } = await supabase
         .from("trips")
-        .update({ actual_completion: new Date().toISOString() } as any)
+        .update({ actual_completion: completionTime } as any)
         .eq("id", tripId);
       if (error) throw error;
+
+      // Audit Trail for completion
+      await supabase.from("pricing_audit_logs").insert({
+        trip_id: tripId,
+        change_reason: "Trip completed by driver",
+        new_data: { actual_completion: completionTime }
+      } as any);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trips"] }),
   });
@@ -514,4 +546,56 @@ export function useReviews() {
   });
 
   return { ...query, insert, deleteReview };
+}
+
+export function useTicketValidation() {
+  const validate = async (ticketId: string) => {
+    const query = ticketId.trim().toUpperCase();
+    
+    // 1. Fetch Booking by ID or Ticket Number
+    const { data: booking, error: bookingError } = await supabase
+      .from("bookings")
+      .select("*, trip:trips(*, driver:drivers(*))")
+      .or(`id.eq.${query},ticket_number.eq.${query}`)
+      .maybeSingle();
+
+    if (bookingError) throw bookingError;
+    if (!booking) throw new Error("Tiket tidak ditemukan");
+
+    const trip = booking.trip;
+    if (!trip) throw new Error("Data perjalanan tidak ditemukan");
+
+    // 2. Fetch current driver location for validation
+    const { data: location, error: locError } = await supabase
+      .from("driver_locations")
+      .select("*")
+      .eq("trip_id", trip.id)
+      .maybeSingle();
+
+    if (locError) throw locError;
+
+    // 3. Validate assignment
+    const isAssignmentValid = trip.driver_id && location ? location.driver_id === trip.driver_id : true;
+
+    // 4. Log Audit Trail
+    await supabase.from("pricing_audit_logs").insert({
+      trip_id: trip.id,
+      change_reason: `Ticket validation request: ${query}`,
+      new_data: { 
+        ticket_id: booking.id, 
+        is_valid: isAssignmentValid,
+        expected_driver: trip.driver_id,
+        actual_driver: location?.driver_id
+      }
+    } as any);
+
+    return {
+      booking,
+      trip,
+      location,
+      isAssignmentValid
+    };
+  };
+
+  return { validate };
 }

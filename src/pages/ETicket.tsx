@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, MapPin, Armchair, Clock, Bus, Share2, Calendar, Route, User, Phone, MessageCircle, Download } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -30,15 +31,22 @@ export default function ETicket() {
   const dbTrip = dbTrips?.find((t) => t.id === booking?.tripId);
   const trip = dbTrip ? toTrip(dbTrip) : null;
 
-  if (!booking || (!isLoading && !trip)) { navigate("/"); return null; }
-  if (isLoading || !trip) {
+  useEffect(() => {
+    if (!isLoading && (!booking || !trip)) {
+      navigate("/");
+    }
+  }, [booking, trip, isLoading, navigate]);
+
+  if (isLoading || !trip || !booking) {
     return <div className="mobile-container min-h-screen bg-background"><ScreenHeader title="E-Ticket" /><div className="px-4 py-6"><SkeletonCard /></div></div>;
   }
 
   const pickupTime = getPickupTime(trip.departureTime, booking.pickupPoint);
-  const bookingRef = generateRef(booking.tripId, booking.seatNumber);
+  const bookingRef = booking.ticketNumber || generateRef(booking.tripId, booking.seatNumber);
 
-  const qrPayload = `${window.location.origin}/verify/${booking.id}`;
+  const qrPayload = booking.ticketNumber 
+    ? `${window.location.origin}/track?ticket=${booking.ticketNumber}`
+    : `${window.location.origin}/verify/${booking.id}`;
 
   const ticketText = [
     `PYU-GO E-Ticket`,

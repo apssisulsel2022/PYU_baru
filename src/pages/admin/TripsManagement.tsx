@@ -1,3 +1,4 @@
+import { useState, useMemo, useEffect } from "react";
 import { calculateTicketPrice, calculateComprehensivePricing } from "@/lib/pricing";
 import { 
   Plus, Pencil, Map as MapIcon, Navigation, 
@@ -31,7 +32,7 @@ import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
 import { DateRange } from "react-day-picker";
 
 import { Textarea } from "@/components/ui/textarea";
-import { calculateTicketPrice, getServiceScale } from "@/lib/pricing";
+import { getServiceScale } from "@/lib/pricing";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -297,7 +298,17 @@ export default function TripsManagement() {
         rayon_id: form.rayon_id,
         start_pickup_point_id: form.start_pickup_point_id,
         budget: Number(form.budget) || 0,
-        description: form.description
+        description: form.description,
+        pricing_details: {
+          ...pricingResult,
+          transportCost: Number(form.base_price) * Number(form.total_seats),
+          accommodationCost: Number(form.accommodation_cost),
+          mealCost: Number(form.meal_cost),
+          attractionTicketsCost: Number(form.attraction_tickets_cost),
+          guideFee: Number(form.guide_fee),
+          otherCosts: Number(form.other_costs),
+          paxCount: Number(form.total_seats)
+        }
       };
       if (editing) payload.id = editing.id;
       await upsert.mutateAsync(payload);

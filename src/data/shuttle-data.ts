@@ -37,6 +37,7 @@ export interface Booking {
   passengerPhone: string;
   status?: string;
   bookedAt?: string;
+  ticketNumber?: string;
 }
 
 export const DESTINATIONS = [

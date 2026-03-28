@@ -98,7 +98,7 @@ export default function DriverTracking() {
   }, [driverLoc, lastUpdate]);
 
   const fetchLocation = useCallback(async (isManual = false) => {
-    if (!booking?.tripId) return;
+    if (!booking?.tripId || !trip) return;
     if (isManual) setIsRefreshing(true);
     
     try {
@@ -111,9 +111,36 @@ export default function DriverTracking() {
       if (error) throw error;
       
       if (data) {
+        // Validation: Driver mismatch check
+        if (trip.driverId && data.driver_id !== trip.driverId) {
+          setConnectionStatus("error");
+          toast.error("Peringatan: Driver yang sedang bertugas tidak sesuai dengan penugasan tiket ini.");
+          
+          // Log Audit Trail for Security Alert
+          await supabase.from("pricing_audit_logs").insert({
+            trip_id: booking.tripId,
+            change_reason: "Security Alert: Driver Mismatch during tracking",
+            new_data: { 
+              expected_driver: trip.driverId, 
+              actual_driver: data.driver_id,
+              ticket_number: booking.ticketNumber 
+            }
+          } as any);
+          return;
+        }
+
         setDriverLoc(data as DriverLocation);
         setConnectionStatus("connected");
         setLastUpdate(Date.now());
+
+        // Audit Trail for successful tracking
+        if (isManual) {
+          await supabase.from("pricing_audit_logs").insert({
+            trip_id: booking.tripId,
+            change_reason: "Ticket tracking request",
+            new_data: { ticket_number: booking.ticketNumber }
+          } as any);
+        }
       } else {
         setConnectionStatus("error");
         toast.error("Driver belum memulai perjalanan");
@@ -126,7 +153,7 @@ export default function DriverTracking() {
         setTimeout(() => setIsRefreshing(false), 800);
       }
     }
-  }, [booking?.tripId]);
+  }, [booking?.tripId, trip, booking?.ticketNumber]);
 
   useEffect(() => {
     if (!booking?.tripId) return;
@@ -145,7 +172,17 @@ export default function DriverTracking() {
         },
         (payload) => {
           if (payload.new) {
-            setDriverLoc(payload.new as DriverLocation);
+            const newLoc = payload.new as DriverLocation;
+            
+            // Re-verify on real-time update
+            if (trip?.driverId && newLoc.driver_id !== trip.driverId) {
+              setConnectionStatus("error");
+              setDriverLoc(null);
+              toast.error("Security Alert: Driver mismatch detected during active trip tracking!");
+              return;
+            }
+
+            setDriverLoc(newLoc);
             setConnectionStatus("connected");
             setLastUpdate(Date.now());
           }

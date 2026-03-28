@@ -7,6 +7,7 @@ import { BottomCTA } from "@/components/BottomCTA";
 import { useBooking } from "@/context/BookingContext";
 import { formatPrice, getPickupTime } from "@/data/shuttle-data";
 import { useTrips, useBookings, toTrip } from "@/hooks/use-supabase-data";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -47,12 +48,36 @@ export default function Checkout() {
     }
     setPaying(true);
     try {
+      // 1. Re-verify seat availability (Double Booking Prevention)
+      const { data: latestTrip, error: fetchError } = await supabase
+        .from("trips")
+        .select("booked_seats")
+        .eq("id", trip.id)
+        .single();
+
+      if (fetchError || !latestTrip) throw new Error("Gagal memverifikasi ketersediaan kursi");
+      
+      if (latestTrip.booked_seats.includes(selectedSeat)) {
+        toast.error("Maaf, kursi ini baru saja dipesan oleh orang lain. Silakan pilih kursi lain.");
+        navigate("/seat-selection");
+        return;
+      }
+
       const trimmedName = passengerName.trim().slice(0, 100);
       const trimmedPhone = passengerPhone.replace(/\s/g, "").slice(0, 20);
 
       localStorage.setItem("user_phone", trimmedPhone);
 
-      await insertBooking.mutateAsync({
+      // Generate Ticket Number
+      let hash = 0;
+      const refStr = `${trip.id}-${selectedSeat}-${Date.now()}`;
+      for (let i = 0; i < refStr.length; i++) {
+        hash = ((hash << 5) - hash + refStr.charCodeAt(i)) | 0;
+      }
+      const ticketNumber = `PYU-${Math.abs(hash).toString(36).toUpperCase().slice(0, 4).padEnd(4, "0")}`;
+
+      // 2. Insert booking
+      const newBookingData = {
         trip_id: trip.id,
         passenger_name: trimmedName,
         passenger_phone: trimmedPhone,
@@ -61,13 +86,18 @@ export default function Checkout() {
         date: format(date, "yyyy-MM-dd"),
         total_price: trip.basePrice,
         status: "paid",
-      });
+        ticket_number: ticketNumber
+      };
 
-      const newSeats = [...trip.bookedSeats, selectedSeat];
+      const result = await insertBooking.mutateAsync(newBookingData);
+      const bookingId = result?.id || trip.id; // Fallback if id not returned
+
+      // 3. Update seats in trip
+      const newSeats = [...latestTrip.booked_seats, selectedSeat];
       await updateSeats.mutateAsync({ tripId: trip.id, bookedSeats: newSeats });
 
       setBooking({
-        id: trip.id,
+        id: bookingId,
         tripId: trip.id,
         pickupPoint,
         seatNumber: selectedSeat,
@@ -76,6 +106,7 @@ export default function Checkout() {
         totalPrice: trip.basePrice,
         passengerName: trimmedName,
         passengerPhone: trimmedPhone,
+        ticketNumber: ticketNumber
       });
       navigate("/ticket");
     } catch (e) {

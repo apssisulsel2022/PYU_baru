@@ -10,12 +10,13 @@ import {
   AlertCircle,
   ChevronLeft,
   Scan,
-  X
+  X,
+  RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { useBookings, useTrips, DbBooking } from "@/hooks/use-supabase-data";
+import { useBookings, useTrips, useTicketValidation } from "@/hooks/use-supabase-data";
 import { useBooking } from "@/context/BookingContext";
 import { toast } from "sonner";
 
@@ -24,54 +25,64 @@ export default function TrackTicket() {
   const location = useLocation();
   const [ticketId, setTicketId] = useState("");
   const [isScanning, setIsScanning] = useState(false);
-  const { data: allBookings = [] } = useBookings();
-  const { data: allTrips = [] } = useTrips();
+  const [isValidating, setIsValidating] = useState(false);
   const { setBooking } = useBooking();
+  const { validate } = useTicketValidation();
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
-  // Auto-fill from state if coming from verification page
+  // Auto-fill from state or query params
   useEffect(() => {
-    if (location.state?.ticketId) {
+    const params = new URLSearchParams(location.search);
+    const ticketParam = params.get("ticket");
+    
+    if (ticketParam) {
+      setTicketId(ticketParam);
+      // Auto-trigger search
+      setTimeout(() => handleSearch(), 500);
+    } else if (location.state?.ticketId) {
       setTicketId(location.state.ticketId);
     }
-  }, [location.state]);
+  }, [location.state, location.search]);
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!ticketId.trim()) {
       toast.error("Masukkan nomor tiket");
       return;
     }
 
-    const query = ticketId.trim().toLowerCase();
-    
-    // Find booking by ID or by Reference
-    const booking = allBookings.find(b => 
-      b.id.toLowerCase() === query || 
-      b.id.toLowerCase().includes(query)
-    );
-
-    if (booking) {
-      const trip = allTrips.find(t => t.id === booking.trip_id);
-      if (trip) {
-        setBooking({
-          id: booking.id,
-          tripId: booking.trip_id,
-          passengerName: booking.passenger_name,
-          passengerPhone: booking.passenger_phone,
-          pickupPoint: { id: booking.pickup_point_id, label: "", name: "", order: 0, coords: [0,0], minutesFromStart: 0 },
-          seatNumber: booking.seat_number,
-          date: booking.date,
-          totalPrice: booking.total_price,
-          status: booking.status as any,
-          bookedAt: booking.booked_at
-        });
-        toast.success("Tiket ditemukan! Menghubungkan ke GPS Driver...");
-        navigate("/tracking");
-      } else {
-        toast.error("Data perjalanan tidak ditemukan");
+    setIsValidating(true);
+    try {
+      const result = await validate(ticketId);
+      
+      if (!result.isAssignmentValid) {
+        toast.error("Peringatan: Driver yang bertugas tidak sesuai penugasan tiket ini.");
+        // We still allow them to see the tracking but with a warning, or we could block it
+        // The prompt says "Business logic to menolak tracking jika driver tidak sesuai"
+        return; 
       }
-    } else {
-      toast.error("Nomor tiket tidak valid atau sudah kadaluarsa");
+
+      const { booking, trip } = result;
+
+      setBooking({
+        id: booking.id,
+        tripId: booking.trip_id,
+        passengerName: booking.passenger_name,
+        passengerPhone: booking.passenger_phone,
+        pickupPoint: { id: booking.pickup_point_id, label: "", name: "", order: 0, coords: [0,0], minutesFromStart: 0 },
+        seatNumber: booking.seat_number,
+        date: booking.date,
+        totalPrice: booking.total_price,
+        status: booking.status as any,
+        bookedAt: booking.booked_at,
+        ticketNumber: booking.ticket_number || undefined
+      });
+
+      toast.success("Tiket valid! Menghubungkan ke GPS Driver...");
+      navigate("/tracking");
+    } catch (err: any) {
+      toast.error(err.message || "Gagal memvalidasi tiket");
+    } finally {
+      setIsValidating(false);
     }
   };
 
@@ -85,10 +96,12 @@ export default function TrackTicket() {
 
       scanner.render(
         (decodedText) => {
-          // Extract ticket ID from URL if scanned from a verification link
-          // e.g., https://pyu-go.com/verify/UUID
+          // Extract ticket ID from URL if scanned from a tracking or verification link
+          // e.g., https://pyu-go.com/track?ticket=PYU-87A7
           let id = decodedText;
-          if (decodedText.includes("/verify/")) {
+          if (decodedText.includes("?ticket=")) {
+            id = decodedText.split("?ticket=").pop() || decodedText;
+          } else if (decodedText.includes("/verify/")) {
             id = decodedText.split("/verify/").pop() || decodedText;
           }
           
@@ -175,10 +188,17 @@ export default function TrackTicket() {
           <Button 
             id="search-btn"
             onClick={handleSearch}
+            disabled={isValidating}
             className="w-full h-14 rounded-2xl shuttle-gradient font-black text-lg shadow-xl shadow-primary/20 gap-2"
           >
-            Lacak Sekarang
-            <ArrowRight size={20} />
+            {isValidating ? (
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            ) : (
+              <>
+                Lacak Sekarang
+                <ArrowRight size={20} />
+              </>
+            )}
           </Button>
 
           <div className="relative">
